@@ -18,7 +18,7 @@ _logger = logging.getLogger(__name__)
 DEFAULT_BASE_URL = "https://api.sifende.com.py"
 API_PREFIX = "/api/v1"
 PANEL_BILLING_URL = "https://app.sifende.com.py"
-USER_AGENT = "odoo-l10n_py_edi_sifende/19.0"
+USER_AGENT = "odoo-l10n_py_edi_sifende/18.0"
 
 ENUM_CACHE_TTL = 24 * 3600
 _ENUM_CACHE = {}

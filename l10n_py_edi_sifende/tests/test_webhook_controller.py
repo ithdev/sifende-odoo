@@ -72,7 +72,12 @@ class TestWebhookController(SifendeCommon, HttpCase):
                     "id": event_id,
                     "tipo": event_type,
                     "version": "1",
-                    "data": {"cdc": CDC, "estado": "APROBADO", "resultados": [], **data},
+                    "data": {
+                        "cdc": CDC,
+                        "estado": "APROBADO",
+                        "resultados": [],
+                        **data,
+                    },
                 }
             ).encode()
         request_headers = {
@@ -239,11 +244,14 @@ class TestWebhookController(SifendeCommon, HttpCase):
     def test_un_error_propio_responde_500_y_el_reintento_se_procesa(self):
         move = self.processing_move()
         event_id = str(uuid.uuid4())
-        with patch.object(
-            type(move),
-            "_l10n_py_sifende_apply_webhook",
-            side_effect=RuntimeError("falla transitoria"),
-        ), self.assertLogs("odoo.addons.l10n_py_edi_sifende", "ERROR"):
+        with (
+            patch.object(
+                type(move),
+                "_l10n_py_sifende_apply_webhook",
+                side_effect=RuntimeError("falla transitoria"),
+            ),
+            self.assertLogs("odoo.addons.l10n_py_edi_sifende", "ERROR"),
+        ):
             response = self.post(event_id=event_id)
         self.assertEqual(response.status_code, 500)
         self.assertEqual(move.l10n_py_edi_status, "processing")

@@ -14,12 +14,12 @@ help:
 	@echo "make fetch-oca  clona OCA/l10n-paraguay (pineado) en vendor/"
 	@echo "make build      construye la imagen de Odoo con las dependencias"
 	@echo "make test       instala el módulo en una base nueva y corre sus tests"
-	@echo "make run        levanta Odoo en http://localhost:$${SIFENDE_ODOO_PORT:-8179}"
+	@echo "make run        levanta Odoo en http://localhost:$${SIFENDE_ODOO_PORT:-8180}"
 	@echo "make down       detiene y borra contenedores y volúmenes"
 	@echo "make e2e-reset  crea la base $(E2E_DB) con el módulo instalado (borra la anterior)"
 	@echo "make e2e-setup  configura empresa, timbrado, diarios y conector (SIFENDE_E2E_API_KEY)"
 	@echo "make e2e-cases  corre los casos contra la API local (scripts/e2e_cases.py)"
-	@echo "make e2e-run    levanta Odoo sobre la base $(E2E_DB) en http://localhost:$${SIFENDE_ODOO_PORT:-8179}"
+	@echo "make e2e-run    levanta Odoo sobre la base $(E2E_DB) en http://localhost:$${SIFENDE_ODOO_PORT:-8180}"
 
 fetch-oca:
 	./scripts/fetch-oca.sh

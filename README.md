@@ -1,7 +1,7 @@
 # sifende-odoo
 
 Conector de [Sifende](https://sifende.com.py) para la localización paraguaya de la OCA
-([OCA/l10n-paraguay](https://github.com/OCA/l10n-paraguay)). Esta rama es la **19.0**.
+([OCA/l10n-paraguay](https://github.com/OCA/l10n-paraguay)). Esta rama es la **18.0**.
 
 | Módulo | Descripción |
 |---|---|
@@ -12,12 +12,12 @@ Licencia LGPL-3.
 ## Desarrollo
 
 Requiere Docker. El entorno monta `l10n_py_edi_sifende` y las addons de OCA pineadas al commit
-`c51fe3d` (se clonan en `vendor/`, ignorado por git). Postgres escucha en `5442` y Odoo en `8179`
+`61d565a` (se clonan en `vendor/`, ignorado por git). Postgres escucha en `5443` y Odoo en `8180`
 (`SIFENDE_ODOO_PG_PORT` y `SIFENDE_ODOO_PORT` los cambian).
 
 ```bash
 make test        # instala el módulo en una base nueva y corre sus tests
-make run         # Odoo en http://localhost:8179
+make run         # Odoo en http://localhost:8180
 make down        # borra contenedores y volúmenes
 ```
 
@@ -40,7 +40,7 @@ establecimiento 001 y punto de expedición 001 cargados:
 export SIFENDE_E2E_API_KEY=sk_...      # clave SANDBOX
 export SIFENDE_E2E_RUC=80012345        # RUC del contribuyente, sin DV
 make e2e-reset e2e-setup e2e-cases     # base nueva, empresa, timbrado, conector, casos
-make e2e-run                           # Odoo en http://localhost:8179 (admin / admin)
+make e2e-run                           # Odoo en http://localhost:8180 (admin / admin)
 ```
 
 El conector apunta a `https://api.sifende.com.py` (`SIFENDE_E2E_BASE_URL` lo cambia). Los casos

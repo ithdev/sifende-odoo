@@ -17,10 +17,13 @@ class SifendeWebhookEvent(models.Model):
     event_id = fields.Char(required=True)
     event_type = fields.Char()
 
-    _event_unique = models.Constraint(
-        "unique(connector_id, event_id)",
-        "El evento ya fue procesado para este conector.",
-    )
+    _sql_constraints = [
+        (
+            "event_unique",
+            "unique(connector_id, event_id)",
+            "El evento ya fue procesado para este conector.",
+        ),
+    ]
 
     @api.model
     def register(self, connector, event_id, event_type):

@@ -1,4 +1,4 @@
-FROM odoo:19
+FROM odoo:18
 
 USER root
 # Dependencias externas de l10n_py_* (manifests de OCA/l10n-paraguay) y del conector

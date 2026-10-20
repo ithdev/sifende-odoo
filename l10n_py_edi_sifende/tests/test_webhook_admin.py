@@ -10,7 +10,9 @@ NEW_SECRET = "whsec_Zx9y8W7v6U5t4S3r2Q1p0O9n8M7l6K5j"
 EVENTS = ["documento.aprobado", "documento.rechazado", "documento.cancelado"]
 
 
-def endpoint(webhook_id=42, url="https://erp.example.com.py/l10n_py_edi_sifende/webhook/1"):
+def endpoint(
+    webhook_id=42, url="https://erp.example.com.py/l10n_py_edi_sifende/webhook/1"
+):
     return {
         "id": webhook_id,
         "url": url,
@@ -89,7 +91,10 @@ class TestWebhookAdmin(SifendeCommon):
         self.fake.add(
             "GET",
             r"^/contribuyente/webhooks$",
-            FakeResponse(200, [endpoint(7, "https://otra.example.com/hook"), endpoint(9, self.url)]),
+            FakeResponse(
+                200,
+                [endpoint(7, "https://otra.example.com/hook"), endpoint(9, self.url)],
+            ),
         )
         params = self.notification(self.connector.action_sifende_register_webhook())
         self.assertEqual(params["type"], "warning")
@@ -101,7 +106,9 @@ class TestWebhookAdmin(SifendeCommon):
     def test_registrar_informa_si_ya_esta_registrado_con_secreto(self):
         self.registered()
         self.fake.add(
-            "GET", r"^/contribuyente/webhooks$", FakeResponse(200, [endpoint(url=self.url)])
+            "GET",
+            r"^/contribuyente/webhooks$",
+            FakeResponse(200, [endpoint(url=self.url)]),
         )
         params = self.notification(self.connector.action_sifende_register_webhook())
         self.assertIn("ya está registrado", params["message"])
@@ -128,9 +135,13 @@ class TestWebhookAdmin(SifendeCommon):
         self.fake.add(
             "POST",
             r"^/contribuyente/webhooks/42/rotar$",
-            FakeResponse(200, {"endpoint": endpoint(url=self.url), "secreto": NEW_SECRET}),
+            FakeResponse(
+                200, {"endpoint": endpoint(url=self.url), "secreto": NEW_SECRET}
+            ),
         )
-        params = self.notification(self.connector.action_sifende_rotate_webhook_secret())
+        params = self.notification(
+            self.connector.action_sifende_rotate_webhook_secret()
+        )
         self.assertEqual(params["type"], "success")
         self.assertEqual(self.connector.sifende_webhook_secret, NEW_SECRET)
         self.assertEqual(self.connector.sifende_webhook_id, 42)
@@ -169,7 +180,9 @@ class TestWebhookAdmin(SifendeCommon):
 
     def test_quitar_conserva_el_webhook_si_la_api_falla(self):
         self.registered()
-        self.fake.add("DELETE", r"/webhooks/42$", problem("internal-error", 500, "Falló"))
+        self.fake.add(
+            "DELETE", r"/webhooks/42$", problem("internal-error", 500, "Falló")
+        )
         with self.assertRaisesRegex(UserError, "Falló"):
             self.connector.action_sifende_remove_webhook()
         self.assertEqual(self.connector.sifende_webhook_id, 42)

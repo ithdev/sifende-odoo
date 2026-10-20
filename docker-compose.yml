@@ -1,3 +1,5 @@
+name: sifende-odoo-18
+
 services:
   db:
     image: postgres:16
@@ -6,7 +8,7 @@ services:
       POSTGRES_PASSWORD: odoo
       POSTGRES_DB: postgres
     ports:
-      - "127.0.0.1:${SIFENDE_ODOO_PG_PORT:-5442}:5432"
+      - "127.0.0.1:${SIFENDE_ODOO_PG_PORT:-5443}:5432"
     volumes:
       - db-data:/var/lib/postgresql/data
     healthcheck:
@@ -20,7 +22,7 @@ services:
       db:
         condition: service_healthy
     ports:
-      - "127.0.0.1:${SIFENDE_ODOO_PORT:-8179}:8069"
+      - "127.0.0.1:${SIFENDE_ODOO_PORT:-8180}:8069"
     environment:
       HOST: db
       USER: odoo

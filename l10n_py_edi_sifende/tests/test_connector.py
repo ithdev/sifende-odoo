@@ -141,7 +141,7 @@ class TestConnector(SifendeCommon):
             {
                 "name": "Contador",
                 "login": "contador_sifende",
-                "group_ids": [
+                "groups_id": [
                     (6, 0, [self.env.ref("account.group_account_manager").id])
                 ],
             }
@@ -156,7 +156,7 @@ class TestConnector(SifendeCommon):
             {
                 "name": "Contador vista",
                 "login": "contador_vista_sifende",
-                "group_ids": [
+                "groups_id": [
                     (6, 0, [self.env.ref("account.group_account_manager").id])
                 ],
             }
