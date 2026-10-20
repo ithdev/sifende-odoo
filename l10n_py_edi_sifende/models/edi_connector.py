@@ -104,6 +104,11 @@ class EDIConnector(models.Model):
         copy=False,
     )
 
+    def write(self, vals):
+        if "sifende_api_key" in vals and "sifende_ambiente" not in vals:
+            vals = {**vals, "sifende_ambiente": False}
+        return super().write(vals)
+
     # === Interfaz pública del conector ===
 
     def send_document(self, invoice_data):
@@ -428,7 +433,9 @@ class EDIConnector(models.Model):
                 "title": self.env._("Conexión con SIFENDE")
                 if ok
                 else self.env._("Conexión con SIFENDE: revise la configuración"),
-                "message": "\n".join(lines),
+                "message": " ".join(
+                    line if line.endswith(".") else f"{line}." for line in lines
+                ),
                 "type": "success" if ok else "warning",
                 "sticky": not ok,
             },

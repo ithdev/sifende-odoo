@@ -103,6 +103,14 @@ class TestConnector(SifendeCommon):
         message = self.message(self.connector.test_connection())
         self.assertEqual(message["type"], "success")
         self.assertNotIn("timbrado", message["message"])
+        self.assertNotIn("\n", message["message"])
+
+    def test_cambiar_la_api_key_borra_el_ambiente_verificado(self):
+        self.route_taxpayer(taxpayer(ambiente="SANDBOX"))
+        self.connector.test_connection()
+        self.assertEqual(self.connector.sifende_ambiente, "SANDBOX")
+        self.connector.sifende_api_key = "sk_live_otra-clave-ficticia"
+        self.assertFalse(self.connector.sifende_ambiente)
 
     def test_test_connection_clave_invalida(self):
         self.route_taxpayer(FakeResponse(401, {"error": "Invalid or expired API key"}))

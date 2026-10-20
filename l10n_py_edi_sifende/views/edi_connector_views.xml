@@ -6,24 +6,28 @@
         <field name="inherit_id" ref="l10n_py_edi_base.view_edi_connector_form" />
         <field name="arch" type="xml">
             <xpath expr="//group[@name='credentials']" position="inside">
-                <group invisible="provider_type != 'sifende'" string="Sifende">
-                    <field
-                        name="sifende_base_url"
-                        placeholder="https://api.sifende.com.py"
-                    />
-                    <field
-                        name="sifende_api_key"
-                        password="True"
-                        groups="base.group_system"
-                        placeholder="sk_..."
-                    />
-                    <field name="sifende_ambiente" />
-                    <p colspan="2" class="text-muted">
-                        El ambiente (Sandbox, Pruebas o Producción) lo define la API key.
-                        Use «Probar Conexión» para verificar que coincida con el ambiente
-                        de este conector.
-                    </p>
-                </group>
+                <field
+                    name="sifende_base_url"
+                    invisible="provider_type != 'sifende'"
+                    placeholder="https://api.sifende.com.py"
+                />
+                <field
+                    name="sifende_api_key"
+                    invisible="provider_type != 'sifende'"
+                    password="True"
+                    groups="base.group_system"
+                    placeholder="sk_..."
+                />
+                <field name="sifende_ambiente" invisible="provider_type != 'sifende'" />
+                <div
+                    colspan="2"
+                    class="text-muted"
+                    invisible="provider_type != 'sifende'"
+                >
+                    El ambiente (Sandbox, Pruebas o Producción) lo define la API key.
+                    Use «Probar Conexión» para verificar que coincida con el ambiente
+                    de este conector.
+                </div>
             </xpath>
         </field>
     </record>
