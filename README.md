@@ -31,6 +31,23 @@ Los tests mockean `requests`: no necesitan una API key ni salen a Internet.
 
 Para correr el linter: `pre-commit run --all-files`.
 
+## Prueba de punta a punta
+
+Con una API key SANDBOX de Sifende (desde el panel: **API keys**) de un contribuyente con timbrado,
+establecimiento 001 y punto de expedición 001 cargados:
+
+```bash
+export SIFENDE_E2E_API_KEY=sk_...      # clave SANDBOX
+export SIFENDE_E2E_RUC=80012345        # RUC del contribuyente, sin DV
+make e2e-reset e2e-setup e2e-cases     # base nueva, empresa, timbrado, conector, casos
+make e2e-run                           # Odoo en http://localhost:8179 (admin / admin)
+```
+
+El conector apunta a `https://api.sifende.com.py` (`SIFENDE_E2E_BASE_URL` lo cambia). Los casos
+imprimen su evidencia como `E2E[...]`. Los números parten de 1: si ya hay documentos SANDBOX en
+ese punto, fije `SIFENDE_E2E_FIRST_NUMBER` antes de `make e2e-setup`. SANDBOX siempre aprueba y no
+admite cancelación ni inutilización: esos caminos los cubren los tests del módulo.
+
 ## Referencia
 
 - API de Sifende: <https://sifende.com.py/docs>

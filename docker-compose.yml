@@ -35,6 +35,7 @@ services:
       [
         "odoo",
         "--addons-path=/mnt/oca/l10n-paraguay,/mnt/extra-addons,/usr/lib/python3/dist-packages/odoo/addons",
+        "--db-filter=${SIFENDE_ODOO_DB_FILTER:-.*}",
       ]
 
 volumes:
