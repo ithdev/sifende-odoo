@@ -12,6 +12,7 @@ CRON_BATCH_SIZE = 200
 DOC_CREDIT_NOTE = "5"
 DOC_DEBIT_NOTE = "6"
 DOC_DELIVERY_NOTE = "7"
+CAPITAL_DEPARTMENT_CODE = 1
 
 
 class AccountMove(models.Model):
@@ -108,6 +109,7 @@ class AccountMove(models.Model):
             "cliente": {
                 "email": self.partner_id.email or None,
                 "codigoCliente": self.partner_id.ref or None,
+                "ciudad": self._l10n_py_sifende_city_name(),
             },
             "items": [
                 self._l10n_py_sifende_item_data(line)
@@ -128,6 +130,13 @@ class AccountMove(models.Model):
                 "kilometrosRecorrido": self.l10n_py_sifende_km_recorrido,
             }
         return extra
+
+    def _l10n_py_sifende_city_name(self):
+        partner = self.partner_id
+        # res.city de OCA no usa los códigos de SIFEN; Capital tiene una sola ciudad
+        if partner.l10n_py_department_code == CAPITAL_DEPARTMENT_CODE:
+            return "Asunción"
+        return partner.city_id.name or partner.city
 
     @api.model
     def _l10n_py_sifende_item_data(self, line):

@@ -22,7 +22,7 @@
     "email": "facturacion@sanroque.com.py",
     "codigoCliente": "CLI-001",
     "departamento": "CENTRAL",
-    "ciudad": "$CITY$"
+    "ciudad": "$CITY_NAME$"
   },
   "items": [
     {

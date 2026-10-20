@@ -199,6 +199,7 @@ class SifendeCommon(TransactionCase):
             }
         )
         cls.city_code = city.l10n_py_code
+        cls.city_name = city.name
         common = {
             "country_id": cls.country_py.id,
             "state_id": state.id,
@@ -377,8 +378,10 @@ class SifendeCommon(TransactionCase):
 
     def expected(self, name):
         text = (FIXTURES / "expected" / f"{name}.json").read_text()
-        text = text.replace("$DV$", self.partner.l10n_py_ruc_dv).replace(
-            "$CITY$", self.city_code
+        text = (
+            text.replace("$DV$", self.partner.l10n_py_ruc_dv)
+            .replace("$CITY_NAME$", self.city_name)
+            .replace("$CITY$", self.city_code)
         )
         return json.loads(text)
 

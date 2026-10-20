@@ -93,6 +93,17 @@ class TestConnector(SifendeCommon):
             self.message(self.connector.test_connection())["type"], "success"
         )
 
+    def test_test_connection_sandbox_no_compara_el_timbrado_sintetico(self):
+        self.route_taxpayer(
+            taxpayer(
+                ambiente="SANDBOX",
+                timbrado={"numero": -1, "fechaInicioVigencia": "2000-01-01"},
+            )
+        )
+        message = self.message(self.connector.test_connection())
+        self.assertEqual(message["type"], "success")
+        self.assertNotIn("timbrado", message["message"])
+
     def test_test_connection_clave_invalida(self):
         self.route_taxpayer(FakeResponse(401, {"error": "Invalid or expired API key"}))
         with self.assertRaisesRegex(UserError, "API key"):

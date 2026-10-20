@@ -32,6 +32,21 @@ class TestRequestMapping(SifendeCommon):
         payload = self.sent_payload(self.make_move("fe"))
         self.assertEqual(payload, self.expected("fe_contado"))
 
+    def test_receptor_envia_la_ciudad_por_nombre_no_por_codigo_de_oca(self):
+        payload = self.sent_payload(self.make_move("fe"))
+        self.assertEqual(payload["receptor"]["ciudad"], self.city_name)
+        self.assertNotEqual(payload["receptor"]["ciudad"], self.city_code)
+
+    def test_receptor_de_capital_envia_asuncion(self):
+        capital = self.env["res.country.state"].search(
+            [("country_id", "=", self.country_py.id), ("l10n_py_code", "=", 1)],
+            limit=1,
+        )
+        self.partner.write({"state_id": capital.id, "city_id": False, "city": "Barrio"})
+        payload = self.sent_payload(self.make_move("fe"))
+        self.assertEqual(payload["receptor"]["departamento"], "CAPITAL")
+        self.assertEqual(payload["receptor"]["ciudad"], "Asunción")
+
     def test_factura_credito_en_cuotas_suma_exacta(self):
         term = self.term([(30, 33.33), (60, 33.33), (90, 33.34)])
         move = self.make_move(

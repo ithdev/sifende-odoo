@@ -436,7 +436,12 @@ class EDIConnector(models.Model):
 
     def _sifende_config_warnings(self, taxpayer):
         warnings = []
-        remote_stamp = (taxpayer.get("timbrado") or {}).get("numero")
+        # el timbrado de Sandbox es sintético: no se compara con el de Odoo
+        remote_stamp = (
+            None
+            if taxpayer.get("ambiente") == "SANDBOX"
+            else (taxpayer.get("timbrado") or {}).get("numero")
+        )
         points = {
             (est["numeroEstablecimiento"], point["puntoExpedicion"])
             for est in taxpayer.get("establecimientos") or []

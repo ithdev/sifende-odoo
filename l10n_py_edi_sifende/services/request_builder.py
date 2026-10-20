@@ -222,7 +222,11 @@ class SifendeRequestBuilder:
         if client_code and 3 <= len(client_code) <= 15:
             receptor["codigoCliente"] = client_code
         if customer.get("departamento") and operation != 4:
-            city = customer.get("ciudad") or customer.get("ciudadDescripcion")
+            city = (
+                extra_customer.get("ciudad")
+                or customer.get("ciudadDescripcion")
+                or customer.get("ciudad")
+            )
             if city:
                 receptor["departamento"] = self._name(
                     "departamento", customer["departamento"]
