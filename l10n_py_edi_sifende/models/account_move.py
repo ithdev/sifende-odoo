@@ -4,7 +4,11 @@ import logging
 from odoo import api, fields, models
 from odoo.exceptions import UserError
 
-from .edi_connector import APPROVED_STATES, PENDING_STATES
+from .edi_connector import (
+    APPROVED_STATES,
+    KUDE_MAX_WAIT,
+    SifendeTransportError,
+)
 
 _logger = logging.getLogger(__name__)
 
@@ -13,6 +17,11 @@ DOC_CREDIT_NOTE = "5"
 DOC_DEBIT_NOTE = "6"
 DOC_DELIVERY_NOTE = "7"
 CAPITAL_DEPARTMENT_CODE = 1
+WEBHOOK_STATES = {
+    "documento.aprobado": "APROBADO",
+    "documento.rechazado": "RECHAZADO",
+    "documento.cancelado": "CANCELADO",
+}
 
 
 class AccountMove(models.Model):
@@ -289,7 +298,11 @@ class AccountMove(models.Model):
             return super()._generate_kude()
         if not self.l10n_py_cdc:
             return
-        pdf = connector.sifende_fetch_kude(self.l10n_py_cdc, document=self)
+        pdf = connector.sifende_fetch_kude(
+            self.l10n_py_cdc,
+            document=self,
+            max_wait=self.env.context.get("l10n_py_sifende_kude_wait", KUDE_MAX_WAIT),
+        )
         self.write(
             {
                 "l10n_py_kude_pdf": base64.b64encode(pdf),
@@ -331,48 +344,62 @@ class AccountMove(models.Model):
     def _l10n_py_sifende_sync(self, connector):
         self.ensure_one()
         if self.l10n_py_edi_status == "processing":
-            response = connector.check_status(self.l10n_py_cdc)
-            result = response.get("result") or {}
-            state = result.get("estado")
-            message = result.get("mensajeRechazo")
-            if state in APPROVED_STATES:
-                self.write(
-                    {
-                        "l10n_py_edi_status": "accepted",
-                        "l10n_py_edi_message": message
-                        or self.env._("Documento aprobado por SIFEN."),
-                    }
-                )
-            elif state == "RECHAZADO":
-                self.write(
-                    {
-                        "l10n_py_edi_status": "rejected",
-                        "l10n_py_edi_message": message
-                        or self.env._("SIFEN rechazó el documento."),
-                        "l10n_py_sifende_reintento_misma_clave": False,
-                    }
-                )
-                return
-            elif state == "ERROR":
-                self.write(
-                    {
-                        "l10n_py_edi_status": "error",
-                        "l10n_py_edi_message": message
-                        or self.env._(
-                            "El envío falló en Sifende. Revise el panel de Sifende."
-                        ),
-                    }
-                )
-                return
-            elif state == "CANCELADO":
-                self.write({"l10n_py_edi_status": "cancelled"})
-                return
-            elif state in PENDING_STATES or not state:
-                return
+            result = connector.check_status(self.l10n_py_cdc).get("result") or {}
+            self._l10n_py_sifende_apply_state(
+                result.get("estado"), result.get("mensajeRechazo")
+            )
         if self.l10n_py_edi_status == "accepted":
             self._l10n_py_sifende_fetch_files(connector)
 
-    def _l10n_py_sifende_fetch_files(self, connector):
+    def _l10n_py_sifende_apply_state(self, state, message=None):
+        self.ensure_one()
+        status = self.l10n_py_edi_status
+        if state in APPROVED_STATES and status == "processing":
+            self.write(
+                {
+                    "l10n_py_edi_status": "accepted",
+                    "l10n_py_edi_message": message
+                    or self.env._("Documento aprobado por SIFEN."),
+                }
+            )
+        elif state == "RECHAZADO" and status == "processing":
+            self.write(
+                {
+                    "l10n_py_edi_status": "rejected",
+                    "l10n_py_edi_message": message
+                    or self.env._("SIFEN rechazó el documento."),
+                    "l10n_py_sifende_reintento_misma_clave": False,
+                }
+            )
+        elif state == "ERROR" and status == "processing":
+            self.write(
+                {
+                    "l10n_py_edi_status": "error",
+                    "l10n_py_edi_message": message
+                    or self.env._(
+                        "El envío falló en Sifende. Revise el panel de Sifende."
+                    ),
+                }
+            )
+        elif state == "CANCELADO" and status in ("processing", "accepted"):
+            self.write({"l10n_py_edi_status": "cancelled"})
+
+    def _l10n_py_sifende_apply_webhook(self, connector, event_type, data):
+        self.ensure_one()
+        state = WEBHOOK_STATES[event_type]
+        if event_type == "documento.aprobado" and data.get("estado") in APPROVED_STATES:
+            state = data["estado"]
+        results = data.get("resultados")
+        message = "\n".join(
+            f"{result.get('codigo')}: {result['mensaje']}"
+            for result in results or []
+            if isinstance(result, dict) and result.get("mensaje")
+        )
+        self._l10n_py_sifende_apply_state(state, message or None)
+        if self.l10n_py_edi_status == "accepted":
+            self._l10n_py_sifende_fetch_files(connector, kude_wait=0)
+
+    def _l10n_py_sifende_fetch_files(self, connector, kude_wait=KUDE_MAX_WAIT):
         self.ensure_one()
         pending = False
         if not self.l10n_py_edi_xml:
@@ -384,13 +411,13 @@ class AccountMove(models.Model):
                         "l10n_py_edi_xml_filename": f"{self.l10n_py_cdc}.xml",
                     }
                 )
-            except UserError as e:
+            except (UserError, SifendeTransportError) as e:
                 pending = True
                 _logger.info("XML de %s pendiente: %s", self.l10n_py_cdc, e)
         if not self.l10n_py_kude_pdf:
             try:
-                self._generate_kude()
-            except UserError as e:
+                self.with_context(l10n_py_sifende_kude_wait=kude_wait)._generate_kude()
+            except (UserError, SifendeTransportError) as e:
                 pending = True
                 _logger.info("KuDE de %s pendiente: %s", self.l10n_py_cdc, e)
         self.l10n_py_sifende_archivos_pendientes = pending

@@ -384,9 +384,10 @@ hace falta cargar certificado, CSC ni la librería <tt class="docutils literal">
 <p>Documentos admitidos: factura (FE), nota de crédito (NCE), nota de
 débito (NDE), nota de remisión (NRE) y autofactura (AFE).</p>
 <p>El envío es asincrónico. Al enviar, el documento queda en estado
-«Procesando» con su CDC y su QR; un cron consulta a Sifende cada 5
-minutos y, cuando SIFEN aprueba, deja el documento «Aceptado» con el XML
-firmado y el KuDE adjuntos.</p>
+«Procesando» con su CDC y su QR. Sifende avisa por webhook cuando SIFEN
+responde, y un cron que consulta cada 5 minutos sirve de respaldo;
+cuando SIFEN aprueba, el documento queda «Aceptado» con el XML firmado y
+el KuDE adjuntos.</p>
 <p><strong>Table of contents</strong></p>
 <div class="contents local topic" id="contents">
 <ul class="simple">
@@ -422,6 +423,22 @@ documento que manda Odoo y rechaza los que ya están en uso.</li>
 <li>Opcional: en <em>Inventario &gt; Configuración &gt; Unidades de medida</em>,
 ajuste el <em>Código de unidad de medida SIFEN</em> de cada unidad (por
 defecto 77, unidad).</li>
+<li>Opcional pero recomendado: pulse <strong>Registrar webhook</strong> para que
+Sifende avise a Odoo apenas SIFEN responde, sin esperar al cron. Odoo
+debe ser accesible desde Internet por HTTPS y su URL base
+(<tt class="docutils literal">web.base.url</tt>, en <em>Ajustes &gt; Técnico &gt; Parámetros del sistema</em>)
+debe ser la pública: Sifende rechaza <tt class="docutils literal">http</tt> y las direcciones
+locales. El botón registra
+<tt class="docutils literal"><span class="pre">&lt;web.base.url&gt;/l10n_py_edi_sifende/webhook/&lt;id</span> del conector&gt;</tt> para
+los eventos <tt class="docutils literal">documento.aprobado</tt>, <tt class="docutils literal">documento.rechazado</tt> y
+<tt class="docutils literal">documento.cancelado</tt>, y guarda el secreto de firma, que solo ven
+los administradores. Si la URL ya estaba registrada en Sifende, el
+botón lo informa y hay que pulsar <strong>Rotar secreto</strong> para obtener un
+secreto. <strong>Quitar webhook</strong> lo elimina en Sifende. El cron sigue
+activo como respaldo.</li>
+<li>Con varias bases de datos en el mismo servidor, la URL pública debe
+resolver a la base correcta (<tt class="docutils literal">dbfilter</tt> o el subdominio), porque
+Sifende no envía el nombre de la base.</li>
 </ol>
 </div>
 <div class="section" id="usage">
@@ -429,10 +446,11 @@ defecto 77, unidad).</li>
 <ol class="arabic simple">
 <li>Confirme la factura y pulse <strong>Enviar a EDI</strong>. El documento pasa a
 <em>Procesando</em>.</li>
-<li>El estado se actualiza solo (cron «Sifende: verificar estado de
-documentos», cada 5 minutos): <em>Aceptado</em> con el XML y el KuDE
+<li>El estado se actualiza solo: <em>Aceptado</em> con el XML y el KuDE
 adjuntos, o <em>Rechazado</em> con los mensajes de SIFEN en el campo
-<em>Mensaje EDI</em>.</li>
+<em>Mensaje EDI</em>. Si el webhook está registrado, Sifende avisa a Odoo en
+cuanto SIFEN responde; si no, o si el aviso se pierde, lo hace el
+cron «Sifende: verificar estado de documentos» (cada 5 minutos).</li>
 <li>Si el documento queda <em>Rechazado</em> o con <em>Error</em>, corrija el dato y
 pulse <strong>Reintentar</strong>. Un reintento tras una corrección usa una clave
 de idempotencia nueva. Si el fallo fue de conexión, se reintenta con
@@ -451,7 +469,6 @@ documentos sin emitirlos.</p>
 <div class="section" id="known-issues-roadmap">
 <h2><a class="toc-backref" href="#toc-entry-3">Known issues / Roadmap</a></h2>
 <ul class="simple">
-<li>Webhooks de Sifende para recibir el resultado sin esperar al cron.</li>
 <li>Proponer a <tt class="docutils literal">l10n_py_edi_base</tt> las claves del diccionario que hoy
 agrega este módulo en <tt class="docutils literal">sifende</tt> (motivo de emisión, unidad de
 medida, descuentos, email y código de cliente).</li>

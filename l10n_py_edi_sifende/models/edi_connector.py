@@ -3,6 +3,7 @@ import logging
 import time
 import uuid
 from dataclasses import dataclass, field
+from urllib.parse import urlsplit
 
 import requests
 from requests.structures import CaseInsensitiveDict
@@ -31,6 +32,10 @@ TRANSIENT_SLUGS = ("idempotency-in-progress", "idempotency-upstream-unknown")
 
 APPROVED_STATES = ("APROBADO", "APROBADO_OBSERVACION")
 PENDING_STATES = ("PENDIENTE", "EN_LOTE")
+
+WEBHOOK_PATH = "/l10n_py_edi_sifende/webhook"
+WEBHOOK_EVENTS = ("documento.aprobado", "documento.rechazado", "documento.cancelado")
+LOCAL_HOSTS = ("localhost", "127.0.0.1", "0.0.0.0", "::1")
 
 
 class SifendeTransportError(Exception):
@@ -104,6 +109,34 @@ class EDIConnector(models.Model):
         copy=False,
     )
 
+    sifende_webhook_url = fields.Char(
+        string="URL del webhook",
+        compute="_compute_sifende_webhook_url",
+    )
+    sifende_webhook_id = fields.Integer(
+        string="Webhook en Sifende",
+        groups="base.group_system",
+        readonly=True,
+        copy=False,
+    )
+    sifende_webhook_secret = fields.Char(
+        string="Secreto del webhook",
+        groups="base.group_system",
+        copy=False,
+    )
+
+    @api.depends("provider_type")
+    def _compute_sifende_webhook_url(self):
+        base_url = (
+            self.env["ir.config_parameter"].sudo().get_param("web.base.url") or ""
+        ).rstrip("/")
+        for connector in self:
+            connector.sifende_webhook_url = (
+                f"{base_url}{WEBHOOK_PATH}/{connector.id}"
+                if connector.id and connector.provider_type == "sifende"
+                else False
+            )
+
     def write(self, vals):
         if "sifende_api_key" in vals and "sifende_ambiente" not in vals:
             vals = {**vals, "sifende_ambiente": False}
@@ -164,7 +197,7 @@ class EDIConnector(models.Model):
             )
         raise UserError(self._sifende_failure_message(response))
 
-    def sifende_fetch_kude(self, cdc, document=None):
+    def sifende_fetch_kude(self, cdc, document=None, max_wait=KUDE_MAX_WAIT):
         self.ensure_one()
         params = None
         waited = 0
@@ -185,7 +218,7 @@ class EDIConnector(models.Model):
             wait = max(
                 1, min(response.retry_after or KUDE_DEFAULT_POLL, RETRY_AFTER_CAP)
             )
-            if waited + wait > KUDE_MAX_WAIT:
+            if waited + wait > max_wait:
                 raise UserError(
                     self.env._(
                         "SIFENDE sigue preparando el KuDE; se reintentará más tarde."
@@ -500,6 +533,138 @@ class EDIConnector(models.Model):
             "Use «Enviar a EDI» para emitirlo."
         )
 
+    # === Webhooks ===
+
+    def action_sifende_register_webhook(self):
+        self.ensure_one()
+        self._sifende_check_webhook_provider()
+        url = self._sifende_public_webhook_url()
+        existing = self._sifende_find_webhook(url)
+        if existing:
+            self.sudo().sifende_webhook_id = existing["id"]
+            if self.sudo().sifende_webhook_secret:
+                message = self.env._("El webhook ya está registrado en Sifende.")
+            else:
+                message = self.env._(
+                    "La URL ya estaba registrada en Sifende, pero el secreto solo se "
+                    "muestra al crearlo. Use «Rotar secreto» para obtener uno nuevo."
+                )
+            return self._sifende_notify(message, "warning")
+        response = self._sifende_webhook_call(
+            "POST", "", json_body={"url": url, "eventos": list(WEBHOOK_EVENTS)}
+        )
+        if not (response.ok and isinstance(response.body, dict)):
+            raise UserError(self._sifende_failure_message(response))
+        self._sifende_store_webhook(response.body)
+        return self._sifende_notify(
+            self.env._("Webhook registrado en Sifende: %(url)s", url=url), "success"
+        )
+
+    def action_sifende_rotate_webhook_secret(self):
+        self.ensure_one()
+        self._sifende_check_webhook_provider()
+        webhook_id = self._sifende_require_webhook_id()
+        response = self._sifende_webhook_call("POST", f"/{webhook_id}/rotar")
+        if response.status_code == 404:
+            self._sifende_forget_webhook()
+            raise UserError(self._sifende_webhook_missing_message())
+        if not (response.ok and isinstance(response.body, dict)):
+            raise UserError(self._sifende_failure_message(response))
+        self._sifende_store_webhook(response.body)
+        return self._sifende_notify(
+            self.env._("Secreto del webhook rotado y guardado."), "success"
+        )
+
+    def action_sifende_remove_webhook(self):
+        self.ensure_one()
+        self._sifende_check_webhook_provider()
+        webhook_id = self._sifende_require_webhook_id()
+        response = self._sifende_webhook_call("DELETE", f"/{webhook_id}")
+        if not (response.ok or response.status_code == 404):
+            raise UserError(self._sifende_failure_message(response))
+        self._sifende_forget_webhook()
+        return self._sifende_notify(
+            self.env._("Webhook eliminado de Sifende."), "success"
+        )
+
+    def _sifende_check_webhook_provider(self):
+        if self.provider_type != "sifende":
+            raise UserError(self.env._("El conector no es de Sifende."))
+        if not self.env.is_system():
+            raise UserError(
+                self.env._("Solo un administrador puede gestionar el webhook.")
+            )
+
+    def _sifende_public_webhook_url(self):
+        base_url = (
+            self.env["ir.config_parameter"].sudo().get_param("web.base.url") or ""
+        ).rstrip("/")
+        parts = urlsplit(base_url)
+        if parts.scheme != "https" or (parts.hostname or "") in LOCAL_HOSTS:
+            raise UserError(
+                self.env._(
+                    "Sifende exige una URL pública con HTTPS y la URL base de Odoo "
+                    "(web.base.url) es «%(url)s». Configúrela en Ajustes > Técnico > "
+                    "Parámetros del sistema.",
+                    url=base_url,
+                )
+            )
+        return f"{base_url}{WEBHOOK_PATH}/{self.id}"
+
+    def _sifende_find_webhook(self, url):
+        response = self._sifende_webhook_call("GET", "")
+        if not (response.ok and isinstance(response.body, list)):
+            raise UserError(self._sifende_failure_message(response))
+        for webhook in response.body:
+            if (webhook.get("url") or "").rstrip("/") == url:
+                return webhook
+        return None
+
+    def _sifende_webhook_call(self, method, suffix, json_body=None):
+        try:
+            return self._sifende_call(
+                method,
+                f"/contribuyente/webhooks{suffix}",
+                operation="event",
+                json_body=json_body,
+            )
+        except SifendeTransportError as e:
+            raise UserError(
+                self.env._("No se pudo contactar a SIFENDE: %(error)s", error=e)
+            ) from e
+
+    def _sifende_store_webhook(self, body):
+        self.sudo().write(
+            {
+                "sifende_webhook_id": (body.get("endpoint") or {}).get("id"),
+                "sifende_webhook_secret": body.get("secreto"),
+            }
+        )
+
+    def _sifende_forget_webhook(self):
+        self.sudo().write({"sifende_webhook_id": 0, "sifende_webhook_secret": False})
+
+    def _sifende_require_webhook_id(self):
+        webhook_id = self.sudo().sifende_webhook_id
+        if not webhook_id:
+            raise UserError(self.env._("El conector no tiene un webhook registrado."))
+        return webhook_id
+
+    def _sifende_webhook_missing_message(self):
+        return self.env._("El webhook ya no existe en Sifende. Regístrelo de nuevo.")
+
+    def _sifende_notify(self, message, notification_type):
+        return {
+            "type": "ir.actions.client",
+            "tag": "display_notification",
+            "params": {
+                "title": self.env._("Webhook de Sifende"),
+                "message": message,
+                "type": notification_type,
+                "sticky": notification_type != "success",
+            },
+        }
+
     # === Catálogo de enumeraciones ===
 
     def _sifende_enums(self):
@@ -669,6 +834,12 @@ class EDIConnector(models.Model):
         return "\n".join(parts)
 
     @staticmethod
+    def _sifende_redact(body):
+        if isinstance(body, dict) and body.get("secreto"):
+            return {**body, "secreto": "whsec_****"}
+        return body
+
+    @staticmethod
     def _sifende_body_cdc(response):
         body = response.body if response is not None else None
         return body.get("cdc") if isinstance(body, dict) else None
@@ -696,7 +867,7 @@ class EDIConnector(models.Model):
             response is not None and not response.ok
         )
         if response is not None and response.body is not None:
-            response_data = response.body
+            response_data = self._sifende_redact(response.body)
         elif response is not None and response.content:
             response_data = f"<{len(response.content)} bytes>"
         else:

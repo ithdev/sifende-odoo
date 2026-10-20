@@ -1,1 +1,2 @@
 id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_l10n_py_sifende_webhook_event_system,l10n_py.sifende.webhook.event system,model_l10n_py_sifende_webhook_event,base.group_system,1,0,0,0
