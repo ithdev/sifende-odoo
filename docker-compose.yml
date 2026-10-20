@@ -1,0 +1,42 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: odoo
+      POSTGRES_PASSWORD: odoo
+      POSTGRES_DB: postgres
+    ports:
+      - "127.0.0.1:${SIFENDE_ODOO_PG_PORT:-5442}:5432"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U odoo"]
+      interval: 5s
+      retries: 10
+
+  odoo:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${SIFENDE_ODOO_PORT:-8179}:8069"
+    environment:
+      HOST: db
+      USER: odoo
+      PASSWORD: odoo
+    volumes:
+      - ./vendor/l10n-paraguay:/mnt/oca/l10n-paraguay:ro
+      - ./l10n_py_edi_sifende:/mnt/extra-addons/l10n_py_edi_sifende
+      - odoo-data:/var/lib/odoo
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command:
+      [
+        "odoo",
+        "--addons-path=/mnt/oca/l10n-paraguay,/mnt/extra-addons,/usr/lib/python3/dist-packages/odoo/addons",
+      ]
+
+volumes:
+  db-data:
+  odoo-data:
