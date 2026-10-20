@@ -37,6 +37,11 @@ class TestRequestMapping(SifendeCommon):
         self.assertEqual(payload["receptor"]["ciudad"], self.city_name)
         self.assertNotEqual(payload["receptor"]["ciudad"], self.city_code)
 
+    def test_receptor_sin_telefono_envia_el_celular(self):
+        self.partner.write({"phone": False, "mobile": "+595 981 123 456"})
+        payload = self.sent_payload(self.make_move("fe"))
+        self.assertEqual(payload["receptor"]["telefono"], "+595981123456")
+
     def test_receptor_de_capital_envia_asuncion(self):
         capital = self.env["res.country.state"].search(
             [("country_id", "=", self.country_py.id), ("l10n_py_code", "=", 1)],

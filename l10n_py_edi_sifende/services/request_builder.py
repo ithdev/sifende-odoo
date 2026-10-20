@@ -197,7 +197,7 @@ class SifendeRequestBuilder:
             "numeroCasa": self._int(
                 customer.get("numeroCasa") or 0, "El número de casa"
             ),
-            "telefono": _phone(customer.get("telefono")),
+            "telefono": _phone(customer.get("telefono") or customer.get("celular")),
             "pais": customer.get("pais"),
         }
         if nature == 1:
