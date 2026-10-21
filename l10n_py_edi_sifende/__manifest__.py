@@ -10,6 +10,7 @@
     "external_dependencies": {"python": ["requests"]},
     "data": [
         "security/ir.model.access.csv",
+        "security/edi_connector_security.xml",
         "data/ir_cron_data.xml",
         "views/edi_connector_views.xml",
         "views/account_move_views.xml",

@@ -4,3 +4,4 @@ from . import test_connector
 from . import test_other_providers
 from . import test_webhook_controller
 from . import test_webhook_admin
+from . import test_security

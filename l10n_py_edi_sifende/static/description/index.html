@@ -411,8 +411,10 @@ Pruebas o Producción).</li>
 <li>En <em>Facturación electrónica &gt; Conectores</em>, cree un conector con
 proveedor <strong>Sifende</strong>. Solo se admite un conector por empresa.</li>
 <li>Elija el ambiente del conector (<em>Pruebas</em> o <em>Producción</em>), pegue la
-API key y, si usa un entorno propio de Sifende, cambie la URL base.
-La API key solo la ven los administradores.</li>
+API key y, si usa un entorno propio de Sifende, cambie la URL base
+(HTTPS; HTTP solo se admite para <tt class="docutils literal">localhost</tt>). La API key y la URL
+base solo las ven y editan los administradores (<em>Ajustes</em>): la URL
+decide adónde viaja la clave.</li>
 <li>Pulse <strong>Probar Conexión</strong>. Falla si el ambiente del conector no
 coincide con el de la API key, y advierte si el timbrado, el
 establecimiento o el punto de expedición de Odoo no existen en
@@ -439,6 +441,12 @@ activo como respaldo.</li>
 <li>Con varias bases de datos en el mismo servidor, la URL pública debe
 resolver a la base correcta (<tt class="docutils literal">dbfilter</tt> o el subdominio), porque
 Sifende no envía el nombre de la base.</li>
+<li>Permisos. Cada conector solo se opera desde su empresa. Enviar,
+reintentar y cancelar un documento exige el rol <em>Contabilidad &gt;
+Facturación</em> y poder editar el documento; consultar su estado,
+también el de solo lectura. <em>Inutilizar números</em> y <strong>Probar
+Conexión</strong> son del <em>Contabilidad &gt; Administrador</em>. La API key, la URL
+base y el webhook son de <em>Ajustes</em>.</li>
 </ol>
 </div>
 <div class="section" id="usage">

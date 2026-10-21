@@ -34,6 +34,7 @@
                 <field
                     name="sifende_base_url"
                     invisible="provider_type != 'sifende'"
+                    groups="base.group_system"
                     placeholder="https://api.sifende.com.py"
                 />
                 <field
