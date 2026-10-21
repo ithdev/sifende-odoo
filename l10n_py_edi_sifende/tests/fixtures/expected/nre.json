@@ -21,7 +21,8 @@
     "email": "facturacion@sanroque.com.py",
     "codigoCliente": "CLI-001",
     "departamento": "CENTRAL",
-    "ciudad": "$CITY_NAME$"
+    "codigoDistrito": 169,
+    "ciudad": "6106"
   },
   "items": [
     {
@@ -44,15 +45,17 @@
     "salida": {
       "direccion": "Calle Teniente Benítez",
       "numeroCasa": 120,
-      "ciudad": "$CITY$",
-      "departamento": "CENTRAL"
+      "departamento": "CENTRAL",
+      "codigoDistrito": 169,
+      "ciudad": "6106"
     },
     "entregas": [
       {
         "direccion": "Avenida Mariscal López",
         "numeroCasa": 450,
-        "ciudad": "$CITY$",
-        "departamento": "CENTRAL"
+        "departamento": "CENTRAL",
+        "codigoDistrito": 169,
+        "ciudad": "6106"
       }
     ],
     "vehiculos": [
@@ -66,8 +69,12 @@
     "transportista": {
       "naturaleza": "NO_CONTRIBUYENTE",
       "nombreRazonSocial": "Carlos Benítez",
+      "tipoDocumento": "CEDULA_PARAGUAYA",
+      "numeroDocumento": "3456789",
+      "domicilioFiscal": "Calle Teniente Benítez 120, Lambaré",
       "numeroDocumentoConductor": "3456789",
-      "nombreConductor": "Carlos Benítez"
+      "nombreConductor": "Carlos Benítez",
+      "direccionConductor": "Calle Teniente Benítez 120, Lambaré"
     }
   }
 }

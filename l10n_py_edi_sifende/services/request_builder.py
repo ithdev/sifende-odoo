@@ -132,7 +132,9 @@ class SifendeRequestBuilder:
             documents = self._associated(data.get("documentosAsociados"))
             request["documentosAsociados"] = documents
             if data.get("transporte"):
-                request["transporte"] = self._transporte(data["transporte"])
+                request["transporte"] = self._transporte(
+                    data["transporte"], extra.get("transporte")
+                )
         else:
             if not extra.get("motivoEmision"):
                 raise UserError(self.env._("Falta el motivo de emisión de la nota."))
@@ -212,16 +214,24 @@ class SifendeRequestBuilder:
         if client_code and 3 <= len(client_code) <= 15:
             receptor["codigoCliente"] = client_code
         if customer.get("departamento") and operation != 4:
-            city = (
-                extra_customer.get("ciudad")
-                or customer.get("ciudadDescripcion")
-                or customer.get("ciudad")
-            )
-            if city:
+            geography = extra_customer.get("geografia")
+            if geography:
                 receptor["departamento"] = self._name(
-                    "departamento", customer["departamento"]
+                    "departamento", geography["departamento"]
                 )
-                receptor["ciudad"] = str(city)
+                receptor["codigoDistrito"] = geography["distrito"]
+                receptor["ciudad"] = str(geography["ciudad"])
+            else:
+                city = (
+                    extra_customer.get("ciudad")
+                    or customer.get("ciudadDescripcion")
+                    or customer.get("ciudad")
+                )
+                if city:
+                    receptor["departamento"] = self._name(
+                        "departamento", customer["departamento"]
+                    )
+                    receptor["ciudad"] = str(city)
         return receptor
 
     def _condicion(self, data, extra):
@@ -401,14 +411,18 @@ class SifendeRequestBuilder:
                 "Otros motivos de traslado"
             )
         if data.get("transporte"):
-            request["transporte"] = self._transporte(data["transporte"])
+            request["transporte"] = self._transporte(
+                data["transporte"], extra.get("transporte")
+            )
         return request
 
-    def _transporte(self, transport):
+    def _transporte(self, transport, extra=None):
+        extra = extra or {}
         result = {
             "modalidad": self._name("modalidadTransporte", transport["modalidad"]),
             "incoterm": transport.get("condicionNegociacion"),
             "numeroManifiesto": transport.get("numeroManifiesto"),
+            "numeroDespachoImportacion": extra.get("numeroDespachoImportacion"),
             "fechaInicioTraslado": transport.get("fechaInicio"),
             "fechaFinTraslado": transport.get("fechaFin"),
         }
@@ -419,46 +433,73 @@ class SifendeRequestBuilder:
                 "responsableFlete", transport["responsableFlete"]
             )
         if transport.get("salida"):
-            result["salida"] = self._local(transport["salida"])
+            result["salida"] = self._local(transport["salida"], extra.get("salida"))
         if transport.get("entregas"):
-            result["entregas"] = [self._local(e) for e in transport["entregas"]]
+            result["entregas"] = [
+                self._local(delivery, geography)
+                for delivery, geography in zip(
+                    transport["entregas"], extra.get("entregas") or [], strict=True
+                )
+            ]
         if transport.get("vehiculos"):
             result["vehiculos"] = [
                 {
                     "tipoVehiculo": v.get("tipo"),
                     "marca": v.get("marca"),
                     "tipoIdentificacion": PRINTED_DOC_VEHICLE_PLATE,
-                    "matricula": v.get("numero"),
+                    "matricula": (v.get("numero") or "").strip(),
                 }
                 for v in transport["vehiculos"]
             ]
-        carrier = transport.get("transportista")
-        if carrier:
-            result["transportista"] = {
-                "naturaleza": self._name("naturalezaReceptor", carrier["naturaleza"]),
-                "nombreRazonSocial": carrier.get("nombre"),
-                "ruc": carrier.get("ruc"),
-                "digitoVerificador": carrier.get("dv"),
-                "numeroDocumentoConductor": carrier.get("choferDocumento"),
-                "nombreConductor": carrier.get("choferNombre"),
-            }
+        if transport.get("transportista"):
+            result["transportista"] = self._transportista(
+                transport["transportista"], extra.get("transportista") or {}
+            )
         return result
 
-    def _local(self, place):
+    def _transportista(self, carrier, extra):
         result = {
+            "naturaleza": self._name("naturalezaReceptor", carrier["naturaleza"]),
+            "nombreRazonSocial": carrier.get("nombre"),
+            "domicilioFiscal": extra.get("domicilioFiscal"),
+            "numeroDocumentoConductor": carrier.get("choferDocumento"),
+            "nombreConductor": carrier.get("choferNombre"),
+            "direccionConductor": extra.get("direccionConductor"),
+            "nombreAgente": extra.get("nombreAgente"),
+            "rucAgente": extra.get("rucAgente"),
+            "digitoVerificadorAgente": extra.get("digitoVerificadorAgente"),
+            "direccionAgente": extra.get("direccionAgente"),
+        }
+        if int(carrier["naturaleza"]) == 1:
+            result["ruc"] = carrier.get("ruc")
+            result["digitoVerificador"] = carrier.get("dv")
+        else:
+            document_type = extra.get("tipoDocumento")
+            if document_type:
+                result["tipoDocumento"] = self._name(
+                    "tipoDocumentoTransportista", document_type
+                )
+            result["numeroDocumento"] = extra.get("numeroDocumento")
+        return result
+
+    def _local(self, place, geography):
+        if not geography:
+            raise UserError(
+                self.env._("Falta la ciudad de «%s».", place.get("direccion"))
+            )
+        return {
             "direccion": place.get("direccion"),
             "numeroCasa": place.get("numeroCasa") or 0,
-            "codigoDistrito": place.get("distrito") or None,
-            "ciudad": str(place["ciudad"]) if place.get("ciudad") else None,
+            "departamento": self._name("departamento", geography["departamento"]),
+            "codigoDistrito": geography["distrito"],
+            "ciudad": str(geography["ciudad"]),
         }
-        if place.get("departamento"):
-            result["departamento"] = self._name("departamento", place["departamento"])
-        return result
 
     # === Autofactura ===
 
     def _autofactura(self, data, extra):
         auto = data["autofactura"]
+        extra_auto = extra.get("autofactura") or {}
         currency = data["moneda"]
         decimals = extra.get("decimales", 0 if currency == PYG else 2)
         doc_type = int(auto["tipoDocumentoVendedor"])
@@ -485,17 +526,11 @@ class SifendeRequestBuilder:
                 "nombre": auto["nombreVendedor"],
                 "numeroCasa": auto["numeroCasaVendedor"],
                 "domicilio": self._domicilio(
-                    auto["direccionVendedor"],
-                    auto["departamentoVendedor"],
-                    auto["distritoVendedor"],
-                    auto["ciudadVendedor"],
+                    auto["direccionVendedor"], extra_auto.get("vendedor")
                 ),
             },
             "lugarOperacion": self._domicilio(
-                auto["direccionProvision"],
-                auto["departamentoProvision"],
-                auto["distritoProvision"],
-                auto["ciudadProvision"],
+                auto["direccionProvision"], extra_auto.get("provision")
             ),
             "constancia": {
                 "tipo": self._name("tipoConstancia", auto["tipoConstancia"])
@@ -525,13 +560,14 @@ class SifendeRequestBuilder:
             ],
         }
 
-    @staticmethod
-    def _domicilio(address, department, district, city):
+    def _domicilio(self, address, geography):
+        if not geography:
+            raise UserError(self.env._("Falta la ciudad de «%s».", address))
         return {
             "direccion": address,
-            "departamento": str(department),
-            "codigoDistrito": district or None,
-            "ciudad": str(city),
+            "departamento": str(geography["departamento"]),
+            "codigoDistrito": geography["distrito"],
+            "ciudad": str(geography["ciudad"]),
         }
 
 

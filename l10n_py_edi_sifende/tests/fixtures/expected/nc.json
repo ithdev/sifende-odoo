@@ -22,7 +22,8 @@
     "email": "facturacion@sanroque.com.py",
     "codigoCliente": "CLI-001",
     "departamento": "CENTRAL",
-    "ciudad": "$CITY_NAME$"
+    "codigoDistrito": 169,
+    "ciudad": "6106"
   },
   "items": [
     {

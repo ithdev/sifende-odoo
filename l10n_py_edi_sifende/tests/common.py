@@ -189,15 +189,16 @@ class SifendeCommon(TransactionCase):
             }
         )
         city = cls.env["res.city"].search(
-            [("state_id", "=", state.id), ("l10n_py_code", "!=", False)], limit=1
+            [("state_id", "=", state.id), ("name", "=", "LAMBARÉ")], limit=1
         ) or cls.env["res.city"].create(
             {
-                "name": "San Lorenzo",
+                "name": "LAMBARÉ",
                 "country_id": cls.country_py.id,
                 "state_id": state.id,
-                "l10n_py_code": "3450",
+                "l10n_py_code": "1107",
             }
         )
+        cls.city_sifende = cls.env["l10n_py.sifende.city"].search([("code", "=", 6106)])
         cls.city_code = city.l10n_py_code
         cls.city_name = city.name
         common = {
@@ -340,6 +341,62 @@ class SifendeCommon(TransactionCase):
             **vals,
         }
 
+    def nre_transport_vals(self, **extra):
+        return {
+            "transport_mode": "1",
+            "transport_type": "1",
+            "freight_responsibility": "1",
+            "transport_start_date": date(2026, 10, 21),
+            "transport_end_date": date(2026, 10, 21),
+            "departure_address": "Calle Teniente Benítez",
+            "departure_house": 120,
+            "sifende_departure_city_id": self.city_sifende.id,
+            "transporter_nature": "2",
+            "transporter_name": "Carlos Benítez",
+            "sifende_transporter_document_type": "1",
+            "sifende_transporter_document_number": "3456789",
+            "sifende_transporter_address": "Calle Teniente Benítez 120, Lambaré",
+            "driver_doc_number": "3456789",
+            "driver_name": "Carlos Benítez",
+            "sifende_driver_address": "Calle Teniente Benítez 120, Lambaré",
+            "vehicle_ids": [
+                (
+                    0,
+                    0,
+                    {
+                        "vehicle_type": "CAMION",
+                        "brand": "ISUZU",
+                        "plate_number": "ABC1234",
+                    },
+                )
+            ],
+            "delivery_ids": [
+                (
+                    0,
+                    0,
+                    {
+                        "address": "Avenida Mariscal López",
+                        "house_number": 450,
+                        "sifende_city_id": self.city_sifende.id,
+                    },
+                )
+            ],
+            **extra,
+        }
+
+    def make_nre(self, **transport_vals):
+        move = self.make_move(
+            "nr",
+            l10n_py_nre_motive="5",
+            l10n_py_sifende_km_recorrido=8,
+            l10n_py_sifende_responsable_emision="3",
+        )
+        move.l10n_py_transport_id = self.env["l10n_py.transport"].create(
+            self.nre_transport_vals(**transport_vals)
+        )
+        self.partner.l10n_py_ruc = self.company.l10n_py_ruc
+        return move
+
     def associate(self, move, cdc="01800123451001001000000012026010112345678901"):
         return self.env["l10n_py.associated.document"].create(
             {"move_id": move.id, "association_type": "1", "cdc": cdc}
@@ -378,12 +435,7 @@ class SifendeCommon(TransactionCase):
 
     def expected(self, name):
         text = (FIXTURES / "expected" / f"{name}.json").read_text()
-        text = (
-            text.replace("$DV$", self.partner.l10n_py_ruc_dv)
-            .replace("$CITY_NAME$", self.city_name)
-            .replace("$CITY$", self.city_code)
-        )
-        return json.loads(text)
+        return json.loads(text.replace("$DV$", self.partner.l10n_py_ruc_dv))
 
     def sent_payload(self, move):
         self.route_emission(self.emission_response())

@@ -9,3 +9,7 @@ from . import l10n_py_sifende_webhook_event
 from . import account_move_kude
 from . import account_move_send
 from . import ir_actions_report
+from . import l10n_py_sifende_city
+from . import l10n_py_transport
+from . import res_partner
+from . import account_move_remision
