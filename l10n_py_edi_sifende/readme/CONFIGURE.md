@@ -6,7 +6,8 @@
    `localhost`). La API key y la URL base solo las ven y editan los administradores
    (*Ajustes*): la URL decide adónde viaja la clave.
 4. Pulse **Probar Conexión**. Falla si el ambiente del conector no coincide con el de la API
-   key, y advierte si el timbrado, el establecimiento o el punto de expedición de Odoo no
+   key (`sk_live_` es Producción; `sk_sandbox_` y `sk_test_`, Pruebas; esa coincidencia también se
+   valida al guardar el conector y antes de enviar, cancelar o inutilizar), y advierte si el timbrado, el establecimiento o el punto de expedición de Odoo no
    existen en Sifende.
 5. Cargue en Sifende el mismo timbrado que usa Odoo. Se recomienda un punto de expedición
    exclusivo para Odoo: Sifende acepta el número de documento que manda Odoo y rechaza los

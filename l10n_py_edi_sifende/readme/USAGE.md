@@ -1,4 +1,6 @@
-1. Confirme la factura y pulse **Enviar a EDI**. El documento pasa a *Procesando*.
+1. Confirme la factura y pulse **Enviar a EDI** (solo se envían documentos publicados). El
+   documento pasa a *Procesando*. Una vez enviado, el tipo de pago, el cheque, la tarjeta, la
+   condición de pago y los vencimientos ya no se pueden modificar.
 2. El estado se actualiza solo: *Aceptado* con el XML y el KuDE adjuntos, o *Rechazado* con
    los mensajes de SIFEN en el campo *Mensaje EDI*. Si el webhook está registrado, Sifende
    avisa a Odoo en cuanto SIFEN responde; si no, o si el aviso se pierde, lo hace el cron
@@ -12,11 +14,12 @@
    panel de Sifende o pídalo a soporte; Odoo consulta el documento cada hora y lo actualiza solo
    (*Procesando* y luego *Aceptado*) cuando vuelve a procesarse con el mismo CDC.
 4. En una nota de crédito o de débito, elija el *Motivo de emisión* en la pestaña
-   *Facturación electrónica*. En una nota de remisión, indique también el responsable de la
+   *Facturación electrónica*. El documento asociado se completa solo con el CDC de la factura
+   de origen cuando esta ya lo tiene. En una nota de remisión, indique también el responsable de la
    emisión y los kilómetros del recorrido.
 5. Si una factura al contado se paga con *Cheque* (*Tipo de Pago* en la pestaña
    *Facturación electrónica*), complete el número del cheque (solo dígitos, hasta 8) y el banco
-   (de 4 a 20 caracteres): Sifende los exige.
+   (de 4 a 20 caracteres): Sifende los exige. Con tarjeta, elija la *Marca de la tarjeta*.
 6. Si SIFEN rechaza un documento ya enviado (*Rechazado* con el CDC cargado), Sifende no
    permite reenviar ese número ni con los mismos datos, y **Reintentar** muestra el
    procedimiento en lugar de enviar. Con el rol *Contabilidad > Administrador*, abra
@@ -30,6 +33,14 @@
    confirma con **Cancelar Documento**. Hace falta el rol *Contabilidad > Facturación* y
    estar dentro del plazo que valida Odoo (48 horas las facturas y autofacturas, 7 días las
    notas).
+
+8. En guaraníes, Sifende redondea el total hacia abajo a múltiplos de 50 y exige que los pagos
+   y las cuotas lo cubran: el conector reparte los montos de Odoo en proporción y la última
+   cuota absorbe el resto.
+9. Si Sifende responde que el número ya está en uso, el documento queda en *Error*. Suba
+   *Número Desde* del timbrado al siguiente número libre del punto (panel de Sifende >
+   Numeración) y pulse **Renumerar**: el documento toma el siguiente número libre, nunca uno que
+   Sifende ya informó, y se envía de nuevo con **Enviar a EDI**.
 
 La vista previa del XML y del QR no está disponible: Sifende no genera documentos sin
 emitirlos.

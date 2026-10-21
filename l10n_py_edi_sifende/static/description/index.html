@@ -420,9 +420,11 @@ API key y, si usa un entorno propio de Sifende, cambie la URL base
 base solo las ven y editan los administradores (<em>Ajustes</em>): la URL
 decide adónde viaja la clave.</li>
 <li>Pulse <strong>Probar Conexión</strong>. Falla si el ambiente del conector no
-coincide con el de la API key, y advierte si el timbrado, el
-establecimiento o el punto de expedición de Odoo no existen en
-Sifende.</li>
+coincide con el de la API key (<tt class="docutils literal">sk_live_</tt> es Producción;
+<tt class="docutils literal">sk_sandbox_</tt> y <tt class="docutils literal">sk_test_</tt>, Pruebas; esa coincidencia también se
+valida al guardar el conector y antes de enviar, cancelar o
+inutilizar), y advierte si el timbrado, el establecimiento o el punto
+de expedición de Odoo no existen en Sifende.</li>
 <li>Cargue en Sifende el mismo timbrado que usa Odoo. Se recomienda un
 punto de expedición exclusivo para Odoo: Sifende acepta el número de
 documento que manda Odoo y rechaza los que ya están en uso.</li>
@@ -459,8 +461,10 @@ base y el webhook son de <em>Ajustes</em>.</li>
 <div class="section" id="usage">
 <h2><a class="toc-backref" href="#toc-entry-2">Usage</a></h2>
 <ol class="arabic simple">
-<li>Confirme la factura y pulse <strong>Enviar a EDI</strong>. El documento pasa a
-<em>Procesando</em>.</li>
+<li>Confirme la factura y pulse <strong>Enviar a EDI</strong> (solo se envían
+documentos publicados). El documento pasa a <em>Procesando</em>. Una vez
+enviado, el tipo de pago, el cheque, la tarjeta, la condición de pago
+y los vencimientos ya no se pueden modificar.</li>
 <li>El estado se actualiza solo: <em>Aceptado</em> con el XML y el KuDE
 adjuntos, o <em>Rechazado</em> con los mensajes de SIFEN en el campo
 <em>Mensaje EDI</em>. Si el webhook está registrado, Sifende avisa a Odoo en
@@ -478,13 +482,14 @@ panel de Sifende o pídalo a soporte; Odoo consulta el documento cada
 hora y lo actualiza solo (<em>Procesando</em> y luego <em>Aceptado</em>) cuando
 vuelve a procesarse con el mismo CDC.</li>
 <li>En una nota de crédito o de débito, elija el <em>Motivo de emisión</em> en
-la pestaña <em>Facturación electrónica</em>. En una nota de remisión,
-indique también el responsable de la emisión y los kilómetros del
-recorrido.</li>
+la pestaña <em>Facturación electrónica</em>. El documento asociado se
+completa solo con el CDC de la factura de origen cuando esta ya lo
+tiene. En una nota de remisión, indique también el responsable de la
+emisión y los kilómetros del recorrido.</li>
 <li>Si una factura al contado se paga con <em>Cheque</em> (<em>Tipo de Pago</em> en la
 pestaña <em>Facturación electrónica</em>), complete el número del cheque
 (solo dígitos, hasta 8) y el banco (de 4 a 20 caracteres): Sifende
-los exige.</li>
+los exige. Con tarjeta, elija la <em>Marca de la tarjeta</em>.</li>
 <li>Si SIFEN rechaza un documento ya enviado (<em>Rechazado</em> con el CDC
 cargado), Sifende no permite reenviar ese número ni con los mismos
 datos, y <strong>Reintentar</strong> muestra el procedimiento en lugar de enviar.
@@ -502,6 +507,14 @@ motivo (se envía a SIFEN) y se confirma con <strong>Cancelar Documento</strong>
 Hace falta el rol <em>Contabilidad &gt; Facturación</em> y estar dentro del
 plazo que valida Odoo (48 horas las facturas y autofacturas, 7 días
 las notas).</li>
+<li>En guaraníes, Sifende redondea el total hacia abajo a múltiplos de 50
+y exige que los pagos y las cuotas lo cubran: el conector reparte los
+montos de Odoo en proporción y la última cuota absorbe el resto.</li>
+<li>Si Sifende responde que el número ya está en uso, el documento queda
+en <em>Error</em>. Suba <em>Número Desde</em> del timbrado al siguiente número
+libre del punto (panel de Sifende &gt; Numeración) y pulse
+<strong>Renumerar</strong>: el documento toma el siguiente número libre, nunca uno
+que Sifende ya informó, y se envía de nuevo con <strong>Enviar a EDI</strong>.</li>
 </ol>
 <p>La vista previa del XML y del QR no está disponible: Sifende no genera
 documentos sin emitirlos.</p>
