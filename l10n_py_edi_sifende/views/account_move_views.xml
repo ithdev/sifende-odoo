@@ -11,6 +11,16 @@
                     invisible="l10n_py_doc_type_code not in ['5', '6']"
                 />
             </xpath>
+            <xpath expr="//field[@name='l10n_py_payment_type']" position="after">
+                <field
+                    name="l10n_py_sifende_cheque_numero"
+                    invisible="l10n_py_payment_type != '2'"
+                />
+                <field
+                    name="l10n_py_sifende_cheque_banco"
+                    invisible="l10n_py_payment_type != '2'"
+                />
+            </xpath>
             <xpath expr="//group[@name='nre_section']" position="inside">
                 <field name="l10n_py_sifende_responsable_emision" />
                 <field name="l10n_py_sifende_km_recorrido" />
