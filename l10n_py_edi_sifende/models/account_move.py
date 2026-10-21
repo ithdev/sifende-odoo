@@ -1,5 +1,7 @@
 import base64
 import logging
+import time
+from datetime import timedelta
 
 from odoo import api, fields, models
 from odoo.exceptions import UserError
@@ -13,6 +15,10 @@ from .edi_connector import (
 _logger = logging.getLogger(__name__)
 
 CRON_BATCH_SIZE = 200
+CRON_TIME_BUDGET = 45
+# la cancelación vence a los 7 días de la emisión (OCA) y sobra un margen
+CANCEL_WATCH_DAYS = 10
+CANCEL_RECHECK_HOURS = 1
 DOC_CREDIT_NOTE = "5"
 DOC_DEBIT_NOTE = "6"
 DOC_DELIVERY_NOTE = "7"
@@ -35,6 +41,7 @@ class AccountMove(models.Model):
     )
     l10n_py_sifende_reintento_misma_clave = fields.Boolean(copy=False)
     l10n_py_sifende_archivos_pendientes = fields.Boolean(copy=False)
+    l10n_py_sifende_ultima_consulta = fields.Datetime(copy=False, readonly=True)
     l10n_py_sifende_motivo_emision = fields.Selection(
         [
             ("1", "Devolución y ajuste de precios"),
@@ -321,39 +328,59 @@ class AccountMove(models.Model):
 
     @api.model
     def _cron_sifende_check_status(self):
+        deadline = time.monotonic() + CRON_TIME_BUDGET
         connectors = (
             self.env["l10n_py.edi.connector"]
             .sudo()
             .search([("provider_type", "=", "sifende")])
         )
         for connector in connectors:
-            moves = self.sudo().search(
-                [
-                    ("company_id", "=", connector.company_id.id),
-                    ("l10n_py_cdc", "!=", False),
-                    "|",
-                    ("l10n_py_edi_status", "=", "processing"),
-                    ("l10n_py_sifende_archivos_pendientes", "=", True),
-                ],
-                limit=CRON_BATCH_SIZE,
-                order="id",
-            )
-            for move in moves:
+            for move in self._l10n_py_sifende_to_sync(connector):
+                if time.monotonic() > deadline:
+                    return
                 try:
                     with self.env.cr.savepoint():
-                        move._l10n_py_sifende_sync(connector)
+                        move._l10n_py_sifende_sync(connector, kude_wait=0)
                 except Exception:
                     _logger.exception(
                         "Error consultando el estado en Sifende del documento %s",
                         move.name,
                     )
+                move.l10n_py_sifende_ultima_consulta = fields.Datetime.now()
 
-    def _l10n_py_sifende_sync(self, connector):
+    @api.model
+    def _l10n_py_sifende_to_sync(self, connector):
+        now = fields.Datetime.now()
+        recheck = now - timedelta(hours=CANCEL_RECHECK_HOURS)
+        watch_from = fields.Date.context_today(self) - timedelta(days=CANCEL_WATCH_DAYS)
+        # primero los que nunca se consultaron o hace más que se consultaron: así el
+        # límite del lote rota por todos en lugar de repetir siempre los mismos
+        return self.sudo().search(
+            [
+                ("company_id", "=", connector.company_id.id),
+                ("l10n_py_cdc", "!=", False),
+                "|",
+                "|",
+                ("l10n_py_edi_status", "=", "processing"),
+                ("l10n_py_sifende_archivos_pendientes", "=", True),
+                "&",
+                "&",
+                ("l10n_py_edi_status", "=", "accepted"),
+                ("invoice_date", ">=", watch_from),
+                "|",
+                ("l10n_py_sifende_ultima_consulta", "=", False),
+                ("l10n_py_sifende_ultima_consulta", "<", recheck),
+            ],
+            limit=CRON_BATCH_SIZE,
+            order="l10n_py_sifende_ultima_consulta asc nulls first, id",
+        )
+
+    def _l10n_py_sifende_sync(self, connector, kude_wait=KUDE_MAX_WAIT):
         self.ensure_one()
-        if self.l10n_py_edi_status == "processing":
+        if self.l10n_py_edi_status in ("processing", "accepted"):
             self._l10n_py_sifende_refresh_state(connector)
         if self.l10n_py_edi_status == "accepted":
-            self._l10n_py_sifende_fetch_files(connector)
+            self._l10n_py_sifende_fetch_files(connector, kude_wait)
 
     def _l10n_py_sifende_refresh_state(self, connector, announced=None, message=None):
         self.ensure_one()

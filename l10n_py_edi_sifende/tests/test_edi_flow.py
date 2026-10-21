@@ -101,8 +101,7 @@ class TestEdiFlow(SifendeCommon):
         self.assertIn("Observación X", move.l10n_py_edi_message)
 
     def test_kude_en_preparacion_respeta_retry_after(self):
-        move = self.sent_move()
-        self.route_status(self.status_response("APROBADO"))
+        move = self.accepted_move()
         pending = FakeResponse(
             202, {"estado": "PENDIENTE"}, headers={"Retry-After": "7"}
         )
@@ -114,7 +113,7 @@ class TestEdiFlow(SifendeCommon):
                 ),
             ]
         )
-        self.run_cron()
+        move.action_download_kude()
         self.sleep.assert_called_with(7)
         kude_calls = self.fake.calls_to("GET", "/kude$")
         self.assertEqual(len(kude_calls), 2)
@@ -139,7 +138,6 @@ class TestEdiFlow(SifendeCommon):
         self.run_cron()
         self.assertTrue(move.l10n_py_kude_pdf)
         self.assertFalse(move.l10n_py_sifende_archivos_pendientes)
-        self.assertEqual(len(self.fake.calls_to("GET", "/status/")), 1)
 
     def test_xml_sin_generar_deja_la_factura_aceptada_y_pendiente(self):
         move = self.sent_move()
