@@ -44,15 +44,15 @@
     "cuotas": 3,
     "detalleCuotas": [
       {
-        "monto": 33333,
+        "monto": 33330,
         "fechaVencimiento": "2026-11-19"
       },
       {
-        "monto": 33333,
+        "monto": 33330,
         "fechaVencimiento": "2026-12-19"
       },
       {
-        "monto": 33334,
+        "monto": 33340,
         "fechaVencimiento": "2027-01-18"
       }
     ]

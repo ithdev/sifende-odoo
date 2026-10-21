@@ -3,7 +3,7 @@ from datetime import date
 from odoo.exceptions import UserError
 from odoo.tests import tagged
 
-from ..services.request_builder import split_installments
+from ..services.request_builder import SifendeRequestBuilder
 from .common import FIXED_DATE, SifendeCommon
 
 
@@ -266,12 +266,63 @@ class TestRequestMapping(SifendeCommon):
         payload = self.sent_payload(self.make_move("fe"))
         self.assertEqual(payload["items"][0]["unidadMedida"], "UNIDAD_RENOMBRADA")
 
-    def test_reparto_de_cuotas_en_guaranies(self):
-        self.assertEqual(split_installments(100000, 3, 0), [33333, 33333, 33334])
-        self.assertEqual(split_installments(1000000, 4, 0), [250000] * 4)
-        self.assertEqual(split_installments(10, 3, 0), [3, 3, 4])
+    def test_cuotas_desiguales_respetan_los_montos_de_las_cuentas_por_cobrar(self):
+        move = self.make_move(
+            "fe",
+            lines=[self.line(price=100000.0)],
+            invoice_payment_term_id=self.term([(30, 30), (60, 70)]).id,
+        )
+        receivable = move.line_ids.filtered(
+            lambda line: line.display_type == "payment_term"
+        )
+        payload = self.sent_payload(move)
+        installments = payload["credito"]["detalleCuotas"]
+        self.assertEqual([c["monto"] for c in installments], [30000, 70000])
+        self.assertEqual(
+            [c["monto"] for c in installments],
+            [line.amount_currency for line in receivable.sorted("date_maturity")],
+        )
+        self.assertEqual(sum(c["monto"] for c in installments), 100000)
 
-    def test_reparto_de_cuotas_con_decimales(self):
-        amounts = split_installments(100.0, 3, 2)
-        self.assertEqual(amounts, [33.33, 33.33, 33.34])
-        self.assertAlmostEqual(sum(amounts), 100.0)
+    def test_dos_lineas_con_el_mismo_vencimiento_suman_una_cuota(self):
+        term = self.term([(30, 40), (30, 30), (60, 30)])
+        move = self.make_move(
+            "fe", lines=[self.line(price=100000.0)], invoice_payment_term_id=term.id
+        )
+        credit = self.sent_payload(move)["credito"]
+        self.assertEqual(credit["cuotas"], 2)
+        self.assertEqual([c["monto"] for c in credit["detalleCuotas"]], [70000, 30000])
+
+    def credit(self, *amounts):
+        return {
+            "infoCuotas": [
+                {"monto": amount, "vencimiento": f"2026-1{index + 1}-19"}
+                for index, amount in enumerate(amounts)
+            ]
+        }
+
+    def builder(self):
+        return SifendeRequestBuilder(self.env, lambda _category, _code: "CUOTA")
+
+    def test_el_redondeo_de_las_cuotas_va_a_la_ultima(self):
+        result = self.builder()._credito(
+            self.credit(33333.33, 33333.33, 33333.33), {"montoTotal": 100000.0}, 2
+        )
+        self.assertEqual(
+            [c["monto"] for c in result["detalleCuotas"]],
+            [33333.33, 33333.33, 33333.34],
+        )
+
+    def test_las_cuotas_en_guaranies_son_enteras(self):
+        result = self.builder()._credito(
+            self.credit(30000.0, 70000.0), {"montoTotal": 100000.0}, 0
+        )
+        amounts = [c["monto"] for c in result["detalleCuotas"]]
+        self.assertEqual(amounts, [30000, 70000])
+        self.assertTrue(all(isinstance(amount, int) for amount in amounts))
+
+    def test_unas_cuotas_que_no_suman_el_total_no_se_ajustan_en_silencio(self):
+        with self.assertRaisesRegex(UserError, "no suman el total"):
+            self.builder()._credito(
+                self.credit(30000.0, 60000.0), {"montoTotal": 100000.0}, 0
+            )

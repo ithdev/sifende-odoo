@@ -1,5 +1,5 @@
 import re
-from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 from odoo.exceptions import UserError
 
@@ -17,16 +17,6 @@ CHEQUE_PAYMENT_TYPE = 2
 PRINTED_DOC_VEHICLE_PLATE = 2
 
 NCM_RE = re.compile(r"^(?=.*[1-9])\d{6,8}$")
-
-
-def split_installments(total, count, decimals):
-    """Reparte `total` en `count` cuotas iguales; el resto va a la última."""
-    unit = Decimal(10) ** -decimals
-    total = Decimal(str(total)).quantize(unit, ROUND_HALF_UP)
-    base = (total / count).quantize(unit, ROUND_DOWN)
-    amounts = [base] * (count - 1)
-    amounts.append(total - base * (count - 1))
-    return [_money(amount, decimals) for amount in amounts]
 
 
 def _money(value, decimals):
@@ -283,10 +273,9 @@ class SifendeRequestBuilder:
                 "condicionCredito": self._name("condicionCredito", 1),
                 "plazoCredito": credit.get("plazo"),
             }
-        total = extra.get("montoTotal")
-        if total is None:
-            total = sum(Decimal(str(c["monto"])) for c in installments)
-        amounts = split_installments(total, len(installments), decimals)
+        amounts = self._installment_amounts(
+            installments, extra.get("montoTotal"), decimals
+        )
         return {
             "condicionCredito": self._name("condicionCredito", 2),
             "cuotas": len(installments),
@@ -295,6 +284,22 @@ class SifendeRequestBuilder:
                 for amount, quota in zip(amounts, installments, strict=True)
             ],
         }
+
+    def _installment_amounts(self, installments, total, decimals):
+        unit = Decimal(10) ** -decimals
+        amounts = [
+            Decimal(str(quota["monto"])).quantize(unit, ROUND_HALF_UP)
+            for quota in installments
+        ]
+        if total is not None:
+            residue = Decimal(str(total)).quantize(unit, ROUND_HALF_UP) - sum(amounts)
+            # solo el redondeo va a la última; una diferencia mayor es un dato roto
+            if abs(residue) > unit * len(amounts):
+                raise UserError(
+                    self.env._("Las cuotas del plazo de pago no suman el total.")
+                )
+            amounts[-1] += residue
+        return [_money(amount, decimals) for amount in amounts]
 
     def _associated(self, documents):
         result = []
