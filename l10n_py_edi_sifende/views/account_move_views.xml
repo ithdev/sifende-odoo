@@ -24,6 +24,7 @@
                 <field
                     name="l10n_py_sifende_motivo_emision"
                     invisible="l10n_py_doc_type_code not in ['5', '6']"
+                    readonly="l10n_py_cdc or l10n_py_edi_status in ['sent', 'processing', 'accepted']"
                 />
             </xpath>
             <xpath expr="//button[@name='action_cancel_edi']" position="attributes">
@@ -98,9 +99,163 @@
                     readonly="l10n_py_cdc or l10n_py_edi_status in ['sent', 'processing', 'accepted']"
                 />
             </xpath>
+            <xpath expr="//field[@name='l10n_py_emission_type']" position="attributes">
+                <attribute
+                    name="readonly"
+                >l10n_py_cdc or l10n_py_edi_status in ['sent', 'processing', 'accepted']</attribute>
+            </xpath>
+            <xpath
+                expr="//field[@name='l10n_py_transaction_type']"
+                position="attributes"
+            >
+                <attribute
+                    name="readonly"
+                >l10n_py_cdc or l10n_py_edi_status in ['sent', 'processing', 'accepted']</attribute>
+            </xpath>
+            <xpath expr="//field[@name='l10n_py_presence_type']" position="attributes">
+                <attribute
+                    name="readonly"
+                >l10n_py_cdc or l10n_py_edi_status in ['sent', 'processing', 'accepted']</attribute>
+            </xpath>
+            <xpath
+                expr="//field[@name='l10n_py_exchange_rate_condition']"
+                position="attributes"
+            >
+                <attribute
+                    name="readonly"
+                >l10n_py_cdc or l10n_py_edi_status in ['sent', 'processing', 'accepted']</attribute>
+            </xpath>
+            <xpath expr="//field[@name='l10n_py_receipt_id']" position="attributes">
+                <attribute
+                    name="readonly"
+                >l10n_py_cdc or l10n_py_edi_status in ['sent', 'processing', 'accepted']</attribute>
+            </xpath>
+            <xpath
+                expr="//field[@name='l10n_py_contingency_motive']"
+                position="attributes"
+            >
+                <attribute
+                    name="readonly"
+                >l10n_py_cdc or l10n_py_edi_status in ['sent', 'processing', 'accepted']</attribute>
+            </xpath>
+            <xpath expr="//field[@name='l10n_py_nre_motive']" position="attributes">
+                <attribute
+                    name="readonly"
+                >l10n_py_cdc or l10n_py_edi_status in ['sent', 'processing', 'accepted']</attribute>
+            </xpath>
+            <xpath
+                expr="//field[@name='l10n_py_nre_estimated_invoice_date']"
+                position="attributes"
+            >
+                <attribute
+                    name="readonly"
+                >l10n_py_cdc or l10n_py_edi_status in ['sent', 'processing', 'accepted']</attribute>
+            </xpath>
+            <xpath
+                expr="//field[@name='l10n_py_afe_constancia_type']"
+                position="attributes"
+            >
+                <attribute
+                    name="readonly"
+                >l10n_py_cdc or l10n_py_edi_status in ['sent', 'processing', 'accepted']</attribute>
+            </xpath>
+            <xpath
+                expr="//field[@name='l10n_py_afe_constancia_number']"
+                position="attributes"
+            >
+                <attribute
+                    name="readonly"
+                >l10n_py_cdc or l10n_py_edi_status in ['sent', 'processing', 'accepted']</attribute>
+            </xpath>
+            <xpath
+                expr="//field[@name='l10n_py_afe_constancia_control']"
+                position="attributes"
+            >
+                <attribute
+                    name="readonly"
+                >l10n_py_cdc or l10n_py_edi_status in ['sent', 'processing', 'accepted']</attribute>
+            </xpath>
+            <xpath
+                expr="//field[@name='l10n_py_afe_vendor_doc_type']"
+                position="attributes"
+            >
+                <attribute
+                    name="readonly"
+                >l10n_py_cdc or l10n_py_edi_status in ['sent', 'processing', 'accepted']</attribute>
+            </xpath>
+            <xpath
+                expr="//field[@name='l10n_py_afe_vendor_doc_number']"
+                position="attributes"
+            >
+                <attribute
+                    name="readonly"
+                >l10n_py_cdc or l10n_py_edi_status in ['sent', 'processing', 'accepted']</attribute>
+            </xpath>
+            <xpath
+                expr="//field[@name='l10n_py_afe_vendor_name']"
+                position="attributes"
+            >
+                <attribute
+                    name="readonly"
+                >l10n_py_cdc or l10n_py_edi_status in ['sent', 'processing', 'accepted']</attribute>
+            </xpath>
+            <xpath
+                expr="//field[@name='l10n_py_afe_vendor_address']"
+                position="attributes"
+            >
+                <attribute
+                    name="readonly"
+                >l10n_py_cdc or l10n_py_edi_status in ['sent', 'processing', 'accepted']</attribute>
+            </xpath>
+            <xpath
+                expr="//field[@name='l10n_py_afe_vendor_house']"
+                position="attributes"
+            >
+                <attribute
+                    name="readonly"
+                >l10n_py_cdc or l10n_py_edi_status in ['sent', 'processing', 'accepted']</attribute>
+            </xpath>
+            <xpath
+                expr="//field[@name='l10n_py_afe_provision_address']"
+                position="attributes"
+            >
+                <attribute
+                    name="readonly"
+                >l10n_py_cdc or l10n_py_edi_status in ['sent', 'processing', 'accepted']</attribute>
+            </xpath>
+            <xpath
+                expr="//group[@name='nre_section']//field[@name='l10n_py_transport_id']"
+                position="attributes"
+            >
+                <attribute
+                    name="readonly"
+                >l10n_py_cdc or l10n_py_edi_status in ['sent', 'processing', 'accepted']</attribute>
+            </xpath>
+            <xpath
+                expr="//group[@name='export_transport_section']//field[@name='l10n_py_transport_id']"
+                position="attributes"
+            >
+                <attribute
+                    name="readonly"
+                >l10n_py_cdc or l10n_py_edi_status in ['sent', 'processing', 'accepted']</attribute>
+            </xpath>
+            <xpath
+                expr="//field[@name='l10n_py_associated_document_ids']"
+                position="attributes"
+            >
+                <attribute
+                    name="readonly"
+                >l10n_py_cdc or l10n_py_edi_status in ['sent', 'processing', 'accepted']</attribute>
+            </xpath>
             <xpath expr="//group[@name='nre_section']" position="inside">
-                <field name="l10n_py_sifende_responsable_emision" />
-                <field name="l10n_py_sifende_km_recorrido" />
+                <field
+                    name="l10n_py_sifende_responsable_emision"
+                    readonly="l10n_py_cdc or l10n_py_edi_status in ['sent', 'processing', 'accepted']"
+                />
+                <field
+                    name="l10n_py_sifende_km_recorrido"
+                    readonly="l10n_py_cdc or l10n_py_edi_status in ['sent', 'processing', 'accepted']"
+                />
             </xpath>
         </field>
     </record>

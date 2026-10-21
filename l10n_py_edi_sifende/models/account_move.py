@@ -37,6 +37,35 @@ FROZEN_PAYMENT_FIELDS = (
     "l10n_py_sifende_tarjeta_marca",
     "invoice_payment_term_id",
 )
+FROZEN_FISCAL_FIELDS = (
+    "l10n_py_emission_type",
+    "l10n_py_transaction_type",
+    "l10n_py_presence_type",
+    "l10n_py_exchange_rate_condition",
+    "l10n_py_receipt_id",
+    "l10n_py_contingency_motive",
+    "l10n_py_nre_motive",
+    "l10n_py_nre_estimated_invoice_date",
+    "l10n_py_transport_id",
+    "l10n_py_sifende_motivo_emision",
+    "l10n_py_sifende_responsable_emision",
+    "l10n_py_sifende_km_recorrido",
+    "l10n_py_afe_constancia_type",
+    "l10n_py_afe_constancia_number",
+    "l10n_py_afe_constancia_control",
+    "l10n_py_afe_vendor_doc_type",
+    "l10n_py_afe_vendor_doc_number",
+    "l10n_py_afe_vendor_name",
+    "l10n_py_afe_vendor_address",
+    "l10n_py_afe_vendor_house",
+    "l10n_py_afe_vendor_department",
+    "l10n_py_afe_vendor_district",
+    "l10n_py_afe_vendor_city",
+    "l10n_py_afe_provision_address",
+    "l10n_py_afe_provision_department",
+    "l10n_py_afe_provision_district",
+    "l10n_py_afe_provision_city",
+)
 WEBHOOK_STATES = {
     "documento.aprobado": "APROBADO",
     "documento.rechazado": "RECHAZADO",
@@ -224,7 +253,11 @@ class AccountMove(models.Model):
     def _l10n_py_sifende_link_origin_document(self):
         for move in self:
             origin = move._l10n_py_sifende_origin()
-            if origin.l10n_py_cdc and not move.l10n_py_associated_document_ids:
+            if (
+                origin.l10n_py_cdc
+                and not move.l10n_py_associated_document_ids
+                and not move._l10n_py_sifende_frozen()
+            ):
                 self.env["l10n_py.associated.document"].sudo().create(
                     {
                         "move_id": move.id,
@@ -254,7 +287,7 @@ class AccountMove(models.Model):
 
     # === Datos de pago congelados ===
 
-    def _l10n_py_sifende_payment_frozen(self):
+    def _l10n_py_sifende_frozen(self):
         self.ensure_one()
         return bool(
             (
@@ -264,28 +297,46 @@ class AccountMove(models.Model):
             and self._l10n_py_sifende_connector()
         )
 
-    def _l10n_py_sifende_frozen_error(self):
+    def _l10n_py_sifende_frozen_error(self, fiscal=False):
+        name = self.l10n_py_cdc or self.name
+        if fiscal:
+            return UserError(
+                self.env._(
+                    "Los datos fiscales de un documento enviado a Sifende no se "
+                    "pueden modificar: SIFEN ya tiene los del documento %(name)s.",
+                    name=name,
+                )
+            )
         return UserError(
             self.env._(
                 "Los datos de pago de un documento enviado a Sifende no se pueden "
                 "modificar: SIFEN ya tiene los del documento %(name)s.",
-                name=self.l10n_py_cdc or self.name,
+                name=name,
             )
         )
 
     def write(self, vals):
-        changed = [name for name in FROZEN_PAYMENT_FIELDS if name in vals]
+        changed = [
+            name
+            for name in FROZEN_PAYMENT_FIELDS + FROZEN_FISCAL_FIELDS
+            if name in vals
+        ]
         if changed:
             for move in self:
-                if not move._l10n_py_sifende_payment_frozen():
+                if not move._l10n_py_sifende_frozen():
                     continue
                 for name in changed:
-                    field = move._fields[name]
-                    if field.convert_to_write(move[name], move) != (
-                        vals[name] or False
-                    ):
-                        raise move._l10n_py_sifende_frozen_error()
+                    if move._l10n_py_sifende_changes(name, vals[name]):
+                        raise move._l10n_py_sifende_frozen_error(
+                            name in FROZEN_FISCAL_FIELDS
+                        )
         return super().write(vals)
+
+    def _l10n_py_sifende_changes(self, name, value):
+        field = self._fields[name]
+        if field.type == "date":
+            value = fields.Date.to_date(value)
+        return field.convert_to_write(self[name], self) != (value or False)
 
     # === Datos adicionales para Sifende ===
 

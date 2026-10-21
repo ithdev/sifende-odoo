@@ -110,8 +110,11 @@ Usage
 
 1.  Confirme la factura y pulse **Enviar a EDI** (solo se envían
     documentos publicados). El documento pasa a *Procesando*. Una vez
-    enviado, el tipo de pago, el cheque, la tarjeta, la condición de
-    pago y los vencimientos ya no se pueden modificar.
+    enviado, los datos de pago (tipo de pago, cheque, tarjeta, condición
+    de pago y vencimientos) y los datos fiscales de la pestaña
+    *Facturación Electrónica* (emisión, transacción, presencia, ID de
+    recibo, contingencia, remisión, autofactura, transporte y documentos
+    asociados) ya no se pueden modificar.
 
 2.  El estado se actualiza solo: *Aceptado* con el XML y el KuDE
     adjuntos, o *Rechazado* con los mensajes de SIFEN en el campo
