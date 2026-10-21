@@ -17,6 +17,7 @@ CHEQUE_PAYMENT_TYPE = 2
 PRINTED_DOC_VEHICLE_PLATE = 2
 
 NCM_RE = re.compile(r"^(?=.*[1-9])\d{6,8}$")
+PYG_ROUNDING_STEP = Decimal(50)
 
 
 def _money(value, decimals):
@@ -228,23 +229,29 @@ class SifendeRequestBuilder:
         currency = data["moneda"]
         decimals = extra.get("decimales", 0 if currency == PYG else 2)
         if int(condition["tipo"]) == 1:
+            entregas = condition.get("entregas") or []
+            amounts = self._distribute(
+                [entrega["monto"] for entrega in entregas],
+                self._fiscal_total(extra, currency, decimals),
+                decimals,
+            )
             return {
                 "condicionOperacion": self._name("condicionOperacion", 1),
                 "pagos": [
-                    self._pago(entrega, data, decimals)
-                    for entrega in condition.get("entregas") or []
+                    self._pago(entrega, data, amount)
+                    for entrega, amount in zip(entregas, amounts, strict=True)
                 ],
             }
         return {
             "condicionOperacion": self._name("condicionOperacion", 2),
-            "credito": self._credito(condition["credito"], extra, decimals),
+            "credito": self._credito(condition["credito"], extra, decimals, currency),
         }
 
-    def _pago(self, entrega, data, decimals):
+    def _pago(self, entrega, data, amount):
         payment_type = int(entrega["tipo"])
         pago = {
             "tipoPago": self._name("tipoPago", payment_type),
-            "montoPago": _money(entrega["monto"], decimals),
+            "montoPago": amount,
             "monedaPago": entrega["moneda"],
         }
         if entrega["moneda"] != PYG and data.get("tipoCambio"):
@@ -264,7 +271,7 @@ class SifendeRequestBuilder:
             }
         return pago
 
-    def _credito(self, credit, extra, decimals):
+    def _credito(self, credit, extra, decimals, currency=PYG):
         installments = credit.get("infoCuotas") or []
         if len(installments) < 2:
             return {
@@ -272,7 +279,10 @@ class SifendeRequestBuilder:
                 "plazoCredito": credit.get("plazo"),
             }
         amounts = self._installment_amounts(
-            installments, extra.get("montoTotal"), decimals
+            installments,
+            extra.get("montoTotal"),
+            decimals,
+            self._fiscal_total(extra, currency, decimals),
         )
         return {
             "condicionCredito": self._name("condicionCredito", 2),
@@ -283,7 +293,30 @@ class SifendeRequestBuilder:
             ],
         }
 
-    def _installment_amounts(self, installments, total, decimals):
+    @staticmethod
+    def _fiscal_total(extra, currency, decimals):
+        """Total que Sifende exige cubrir: en PYG baja a múltiplos de 50."""
+        total = extra.get("totalOperacion", extra.get("montoTotal"))
+        if total is None:
+            return None
+        total = Decimal(str(total)).quantize(Decimal(10) ** -decimals, ROUND_HALF_UP)
+        return total - total % PYG_ROUNDING_STEP if currency == PYG else total
+
+    @staticmethod
+    def _distribute(amounts, target, decimals):
+        """Reparte `target` en proporción a `amounts`; la última absorbe el resto."""
+        unit = Decimal(10) ** -decimals
+        values = [Decimal(str(amount)) for amount in amounts]
+        total = sum(values)
+        if target is None or not total:
+            return [_money(value, decimals) for value in values]
+        shares = [
+            (value * target / total).quantize(unit, ROUND_HALF_UP) for value in values
+        ]
+        shares[-1] = target - sum(shares[:-1])
+        return [_money(share, decimals) for share in shares]
+
+    def _installment_amounts(self, installments, total, decimals, fiscal_total=None):
         unit = Decimal(10) ** -decimals
         amounts = [
             Decimal(str(quota["monto"])).quantize(unit, ROUND_HALF_UP)
@@ -297,7 +330,7 @@ class SifendeRequestBuilder:
                     self.env._("Las cuotas del plazo de pago no suman el total.")
                 )
             amounts[-1] += residue
-        return [_money(amount, decimals) for amount in amounts]
+        return self._distribute(amounts, fiscal_total, decimals)
 
     def _associated(self, documents):
         result = []

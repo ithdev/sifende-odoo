@@ -132,6 +132,7 @@ class AccountMove(models.Model):
             "moveId": self.id,
             "idempotencyKey": self._l10n_py_sifende_idempotency_key(),
             "montoTotal": self.amount_total,
+            "totalOperacion": self._l10n_py_sifende_operation_total(),
             "decimales": self.currency_id.decimal_places,
             "cliente": {
                 "email": self.partner_id.email or None,
@@ -157,6 +158,17 @@ class AccountMove(models.Model):
                 "kilometrosRecorrido": self.l10n_py_sifende_km_recorrido,
             }
         return extra
+
+    def _l10n_py_sifende_operation_total(self):
+        # sin la línea de redondeo de efectivo: es lo que Sifende redondea
+        self.ensure_one()
+        return self.currency_id.round(
+            sum(
+                line.price_total
+                for line in self.invoice_line_ids
+                if line.display_type == "product"
+            )
+        )
 
     def _l10n_py_sifende_city_name(self):
         partner = self.partner_id
