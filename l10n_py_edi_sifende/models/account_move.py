@@ -321,6 +321,7 @@ class AccountMove(models.Model):
         if not connector:
             return super().action_send_edi()
         self._l10n_py_sifende_check_posted()
+        connector._sifende_check_environment()
         if self._l10n_py_sifende_is_failed():
             raise UserError(self._l10n_py_sifende_failed_steps())
         self._validate_edi_data()
@@ -367,8 +368,10 @@ class AccountMove(models.Model):
 
     def action_cancel_edi(self):
         self.ensure_one()
-        if self._l10n_py_sifende_connector():
+        connector = self._l10n_py_sifende_connector()
+        if connector:
             self.check_access("write")
+            connector._sifende_check_environment()
         return super().action_cancel_edi()
 
     def action_retry_edi(self):
