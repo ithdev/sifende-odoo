@@ -9,3 +9,4 @@ from . import test_cron
 from . import test_procedures
 from . import test_emission_guards
 from . import test_pyg_rounding
+from . import test_notes_and_stamps
