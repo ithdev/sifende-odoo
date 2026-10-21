@@ -370,6 +370,9 @@ class EDIConnector(models.Model):
         slug = response.slug
         failure = {"success": False, "edi_status": "error", "transient": False}
         if slug in ("document-number-in-use", "document-number-voided"):
+            body = response.body if isinstance(response.body, dict) else {}
+            failure["number_conflict"] = True
+            failure["existing_cdc"] = body.get("cdc") or body.get("cdcExistente")
             failure["error"] = self._sifende_number_conflict_message(response)
         elif slug in TRANSIENT_SLUGS or response.status_code in TRANSIENT_STATUS:
             failure["transient"] = True
@@ -415,14 +418,22 @@ class EDIConnector(models.Model):
         body = response.body if isinstance(response.body, dict) else {}
         cdc = body.get("cdc") or body.get("cdcExistente")
         if response.slug == "document-number-voided":
-            return self.env._(
+            message = self.env._(
                 "El número está inutilizado en SIFENDE y no se puede usar. %(detail)s",
                 detail=response.detail or "",
             )
-        message = self.env._("El número de documento ya está en uso en SIFENDE.")
-        if cdc:
-            message += " " + self.env._("CDC existente: %(cdc)s.", cdc=cdc)
-        return message
+        else:
+            message = self.env._("El número de documento ya está en uso en SIFENDE.")
+            if cdc:
+                message += " " + self.env._("CDC existente: %(cdc)s.", cdc=cdc)
+        return (
+            message
+            + " "
+            + self.env._(
+                "Suba «Número Desde» del timbrado al siguiente número libre del punto "
+                "(panel de Sifende > Numeración) y pulse «Renumerar» en este documento."
+            )
+        )
 
     def _sifende_check_status(self, cdc):
         self.ensure_one()

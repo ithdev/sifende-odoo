@@ -48,6 +48,8 @@ class AccountMove(models.Model):
     )
     l10n_py_sifende_reintento_misma_clave = fields.Boolean(copy=False)
     l10n_py_sifende_envio_fallido = fields.Boolean(copy=False)
+    l10n_py_sifende_numero_ocupado = fields.Boolean(copy=False, readonly=True)
+    l10n_py_sifende_cdc_existente = fields.Char(copy=False, readonly=True)
     l10n_py_sifende_archivos_pendientes = fields.Boolean(copy=False)
     l10n_py_sifende_ultima_consulta = fields.Datetime(copy=False, readonly=True)
     l10n_py_sifende_motivo_emision = fields.Selection(
@@ -147,9 +149,39 @@ class AccountMove(models.Model):
             move.l10n_py_authorization_id = current
 
     def action_post(self):
+        self._l10n_py_sifende_assign_number()
         res = super().action_post()
         self._l10n_py_sifende_link_origin_document()
         return res
+
+    def _l10n_py_sifende_assign_number(self):
+        # como OCA, pero sin bajar de «Número Desde» ni de los números ocupados
+        for move in self:
+            authorization = move.l10n_py_authorization_id
+            if (
+                move.l10n_py_invoice_number
+                or not authorization
+                or not self.env.registry.ready
+                or not move._l10n_py_sifende_connector()
+                or not move._l10n_py_sifende_uses_documents()
+            ):
+                continue
+            authorization.check_validity()
+            move.l10n_py_invoice_number = move._l10n_py_sifende_free_number()
+
+    def _l10n_py_sifende_free_number(self):
+        self.ensure_one()
+        authorization = self.l10n_py_authorization_id
+        number = authorization._l10n_py_sifende_next_number(exclude_move=self)
+        if number > authorization.invoice_number_to:
+            raise UserError(
+                self.env._(
+                    "La faja de numeración está agotada para el timbrado %(timbrado)s.",
+                    timbrado=authorization.name,
+                )
+            )
+        authorization.check_number_available(number, exclude_move_id=self.id)
+        return number
 
     def _l10n_py_sifende_origin(self):
         self.ensure_one()
@@ -425,6 +457,78 @@ class AccountMove(models.Model):
                 "l10n_py_sifende_envio_fallido": False,
             }
         )
+        if response.get("number_conflict"):
+            self._l10n_py_sifende_register_number_conflict(response.get("existing_cdc"))
+
+    def _l10n_py_sifende_is_same_document(self, cdc):
+        self.ensure_one()
+        number = str(self.l10n_py_invoice_number).zfill(7)
+        return bool(
+            cdc
+            and len(cdc) == 44
+            and cdc[17:24] == number
+            and cdc[34:43] == self.l10n_py_security_code
+        )
+
+    def _l10n_py_sifende_register_number_conflict(self, cdc):
+        self.ensure_one()
+        values = {
+            "l10n_py_sifende_numero_ocupado": True,
+            "l10n_py_sifende_cdc_existente": cdc,
+        }
+        if self._l10n_py_sifende_is_same_document(cdc):
+            self.write(values)
+            return
+        authorization = self.l10n_py_authorization_id.sudo()
+        authorization.l10n_py_sifende_ultimo_numero_en_uso = max(
+            authorization.l10n_py_sifende_ultimo_numero_en_uso,
+            self.l10n_py_invoice_number,
+        )
+        self.write(values)
+
+    def action_l10n_py_sifende_renumber(self):
+        self.ensure_one()
+        self.check_access("write")
+        if not (
+            self.state == "posted"
+            and self.l10n_py_sifende_numero_ocupado
+            and self._l10n_py_sifende_connector()
+        ):
+            raise UserError(
+                self.env._(
+                    "Solo se renumera un documento publicado cuyo número Sifende "
+                    "informó como ya usado."
+                )
+            )
+        if self.l10n_py_cdc or self._l10n_py_sifende_is_same_document(
+            self.l10n_py_sifende_cdc_existente
+        ):
+            raise UserError(
+                self.env._(
+                    "El CDC %(cdc)s corresponde a este mismo documento: Sifende ya lo "
+                    "emitió y su número no se cambia. Consulte su estado en el panel "
+                    "de Sifende.",
+                    cdc=self.l10n_py_cdc or self.l10n_py_sifende_cdc_existente,
+                )
+            )
+        old_number = self.l10n_py_invoice_number
+        number = self._l10n_py_sifende_free_number()
+        self.write(
+            {
+                "l10n_py_invoice_number": number,
+                "l10n_py_sifende_numero_ocupado": False,
+                "l10n_py_sifende_cdc_existente": False,
+                "l10n_py_sifende_intento": self.l10n_py_sifende_intento + 1,
+                "l10n_py_sifende_reintento_misma_clave": False,
+                "l10n_py_edi_status": "to_send",
+                "l10n_py_edi_message": self.env._(
+                    "Renumerado: el número %(old)s ya estaba en uso en Sifende y "
+                    "ahora le corresponde el %(new)s. Pulse «Enviar a EDI».",
+                    old=old_number,
+                    new=number,
+                ),
+            }
+        )
 
     def _process_edi_response(self, response):
         self.ensure_one()
@@ -458,6 +562,8 @@ class AccountMove(models.Model):
         self.ensure_one()
         if self._l10n_py_sifende_connector():
             self._l10n_py_sifende_check_posted()
+            if self.l10n_py_sifende_numero_ocupado:
+                raise UserError(self._l10n_py_sifende_number_steps())
             if self.l10n_py_edi_status == "rejected" and self.l10n_py_cdc:
                 raise UserError(self._l10n_py_sifende_rejection_steps())
             if self._l10n_py_sifende_is_failed():
@@ -472,6 +578,15 @@ class AccountMove(models.Model):
     def _l10n_py_sifende_is_failed(self):
         self.ensure_one()
         return self.l10n_py_edi_status == "error" and self.l10n_py_sifende_envio_fallido
+
+    def _l10n_py_sifende_number_steps(self):
+        return self.env._(
+            "Sifende ya tiene el número %(number)s de este documento y reenviarlo "
+            "repite el error. Pulse «Renumerar»; si conoce el siguiente número libre "
+            "del punto (panel de Sifende > Numeración), suba antes «Número Desde» "
+            "del timbrado.",
+            number=self.l10n_py_invoice_number,
+        )
 
     def _l10n_py_sifende_failed_steps(self):
         return self.env._(
