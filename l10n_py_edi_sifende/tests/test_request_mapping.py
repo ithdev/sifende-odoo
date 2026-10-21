@@ -1,5 +1,3 @@
-from datetime import date
-
 from odoo.exceptions import UserError
 from odoo.tests import tagged
 
@@ -33,10 +31,11 @@ class TestRequestMapping(SifendeCommon):
         payload = self.sent_payload(self.make_move("fe"))
         self.assertEqual(payload, self.expected("fe_contado"))
 
-    def test_receptor_envia_la_ciudad_por_nombre_no_por_codigo_de_oca(self):
-        payload = self.sent_payload(self.make_move("fe"))
-        self.assertEqual(payload["receptor"]["ciudad"], self.city_name)
-        self.assertNotEqual(payload["receptor"]["ciudad"], self.city_code)
+    def test_receptor_envia_los_codigos_de_sifende_no_los_de_oca(self):
+        receptor = self.sent_payload(self.make_move("fe"))["receptor"]
+        self.assertEqual(self.city_code, "1107")
+        self.assertEqual(receptor["ciudad"], "6106")
+        self.assertEqual(receptor["codigoDistrito"], 169)
 
     def test_receptor_sin_telefono_envia_el_celular(self):
         self.partner.write({"phone": False, "mobile": "+595 981 123 456"})
@@ -49,9 +48,40 @@ class TestRequestMapping(SifendeCommon):
             limit=1,
         )
         self.partner.write({"state_id": capital.id, "city_id": False, "city": "Barrio"})
-        payload = self.sent_payload(self.make_move("fe"))
-        self.assertEqual(payload["receptor"]["departamento"], "CAPITAL")
-        self.assertEqual(payload["receptor"]["ciudad"], "Asunción")
+        receptor = self.sent_payload(self.make_move("fe"))["receptor"]
+        self.assertEqual(receptor["departamento"], "CAPITAL")
+        self.assertEqual(receptor["ciudad"], "1")
+        self.assertEqual(receptor["codigoDistrito"], 1)
+
+    def test_receptor_con_una_ciudad_que_sifende_no_reconoce_va_por_nombre(self):
+        self.partner.write({"city_id": False, "city": "Ciudad Inventada"})
+        receptor = self.sent_payload(self.make_move("fe"))["receptor"]
+        self.assertEqual(receptor["departamento"], "CENTRAL")
+        self.assertEqual(receptor["ciudad"], "Ciudad Inventada")
+        self.assertNotIn("codigoDistrito", receptor)
+
+    def test_receptor_con_ciudad_sifende_elegida_manda_esa(self):
+        self.partner.write(
+            {
+                "city_id": False,
+                "city": "Ciudad Inventada",
+                "l10n_py_sifende_city_id": self.city_sifende.id,
+            }
+        )
+        receptor = self.sent_payload(self.make_move("fe"))["receptor"]
+        self.assertEqual(receptor["ciudad"], "6106")
+
+    def test_receptor_de_un_departamento_con_otro_codigo_en_oca_va_con_el_de_sifende(
+        self,
+    ):
+        state = self.env.ref("l10n_py_base.state_py_canindeyu")
+        self.assertEqual(state.l10n_py_code, 15)
+        self.partner.write(
+            {"state_id": state.id, "city_id": False, "city": "Curuguaty"}
+        )
+        receptor = self.sent_payload(self.make_move("fe"))["receptor"]
+        self.assertEqual(receptor["departamento"], "CANINDEYU")
+        self.assertEqual(receptor["ciudad"], "4881")
 
     def test_factura_credito_en_cuotas_suma_exacta(self):
         term = self.term([(30, 33.33), (60, 33.33), (90, 33.34)])
@@ -177,56 +207,7 @@ class TestRequestMapping(SifendeCommon):
         self.assertEqual(self.sent_payload(move), self.expected("nd"))
 
     def test_nota_de_remision(self):
-        move = self.make_move(
-            "nr",
-            l10n_py_nre_motive="5",
-            l10n_py_sifende_km_recorrido=8,
-            l10n_py_sifende_responsable_emision="3",
-        )
-        transport = self.env["l10n_py.transport"].create(
-            {
-                "move_id": move.id,
-                "transport_mode": "1",
-                "transport_type": "1",
-                "freight_responsibility": "1",
-                "transport_start_date": date(2026, 10, 21),
-                "transport_end_date": date(2026, 10, 21),
-                "departure_address": "Calle Teniente Benítez",
-                "departure_house": 120,
-                "departure_department": 12,
-                "departure_city": int(self.city_code),
-                "transporter_nature": "2",
-                "transporter_name": "Carlos Benítez",
-                "driver_doc_number": "3456789",
-                "driver_name": "Carlos Benítez",
-                "vehicle_ids": [
-                    (
-                        0,
-                        0,
-                        {
-                            "vehicle_type": "CAMION",
-                            "brand": "ISUZU",
-                            "plate_number": "ABC1234",
-                        },
-                    )
-                ],
-                "delivery_ids": [
-                    (
-                        0,
-                        0,
-                        {
-                            "address": "Avenida Mariscal López",
-                            "house_number": 450,
-                            "department": 12,
-                            "city": int(self.city_code),
-                        },
-                    )
-                ],
-            }
-        )
-        move.l10n_py_transport_id = transport
-        self.partner.l10n_py_ruc = self.company.l10n_py_ruc
-        self.assertEqual(self.sent_payload(move), self.expected("nre"))
+        self.assertEqual(self.sent_payload(self.make_nre()), self.expected("nre"))
 
     def test_nota_de_remision_exige_kilometros_y_transporte(self):
         move = self.make_move("nr", l10n_py_nre_motive="2")
@@ -244,13 +225,11 @@ class TestRequestMapping(SifendeCommon):
             l10n_py_afe_vendor_name="María González",
             l10n_py_afe_vendor_address="Av. España",
             l10n_py_afe_vendor_house=0,
-            l10n_py_afe_vendor_department=1,
-            l10n_py_afe_vendor_district=1,
-            l10n_py_afe_vendor_city=1,
+            l10n_py_sifende_afe_vendor_city_id=self.city_sifende.id,
             l10n_py_afe_provision_address="Ruta 1 km 20",
-            l10n_py_afe_provision_department=12,
-            l10n_py_afe_provision_district=2,
-            l10n_py_afe_provision_city=3450,
+            l10n_py_sifende_afe_provision_city_id=self.env["l10n_py.sifende.city"]
+            .search([("code", "=", 2886)])
+            .id,
         )
         self.env["l10n_py.associated.document"].create(
             {

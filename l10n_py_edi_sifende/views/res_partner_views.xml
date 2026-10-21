@@ -17,4 +17,20 @@
             </xpath>
         </field>
     </record>
+    <record id="view_partner_form_sifende_city" model="ir.ui.view">
+        <field name="name">res.partner.form.sifende.city</field>
+        <field name="model">res.partner</field>
+        <field name="inherit_id" ref="l10n_py_base.l10n_py_base_res_partner_form" />
+        <field name="arch" type="xml">
+            <xpath
+                expr="//field[@name='l10n_py_activity_description']"
+                position="after"
+            >
+                <field
+                    name="l10n_py_sifende_city_id"
+                    invisible="country_id != %(base.py)d"
+                />
+            </xpath>
+        </field>
+    </record>
 </odoo>

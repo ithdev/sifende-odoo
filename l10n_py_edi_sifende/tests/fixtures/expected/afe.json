@@ -17,16 +17,16 @@
     "numeroCasa": 0,
     "domicilio": {
       "direccion": "Av. España",
-      "departamento": "1",
-      "codigoDistrito": 1,
-      "ciudad": "1"
+      "departamento": "12",
+      "codigoDistrito": 169,
+      "ciudad": "6106"
     }
   },
   "lugarOperacion": {
     "direccion": "Ruta 1 km 20",
-    "departamento": "12",
-    "codigoDistrito": 2,
-    "ciudad": "3450"
+    "departamento": "6",
+    "codigoDistrito": 61,
+    "ciudad": "2886"
   },
   "constancia": {
     "tipo": "CONSTANCIA_NO_CONTRIBUYENTE"
