@@ -1,3 +1,5 @@
+from lxml import etree
+
 from odoo.tests import Form, tagged
 from odoo.tests.common import TransactionCase
 
@@ -33,3 +35,18 @@ class TestPartnerIdentity(TransactionCase):
         partner = form.save()
         self.assertEqual(partner.l10n_py_doc_type, "4")
         self.assertEqual(partner.l10n_py_doc_number, "0")
+
+    def test_los_campos_propios_del_contacto_van_en_un_grupo_para_mostrar_su_etiqueta(
+        self,
+    ):
+        arch = self.env["res.partner"].get_view(
+            self.env.ref("base.view_partner_form").id
+        )["arch"]
+        tree = etree.fromstring(arch)
+        for name in (
+            "l10n_py_doc_type",
+            "l10n_py_doc_number",
+            "l10n_py_sifende_city_id",
+        ):
+            node = tree.xpath(f"//field[@name='{name}']")[0]
+            self.assertEqual(node.getparent().tag, "group", name)
