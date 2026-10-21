@@ -37,8 +37,9 @@
    notas).
 8. Con el documento *Aceptado*, **Imprimir** (el botón y los reportes del menú) entrega el KuDE
    que genera Sifende, con el CDC y el QR, en lugar del PDF estándar de Odoo. **Enviar** manda
-   por correo el KuDE y el XML firmado (si todavía no están descargados, Odoo los trae de
-   Sifende; si Sifende aún no los entrega, muestra un aviso y se puede reintentar).
+   por correo el KuDE, tal como lo entregó Sifende, y el XML firmado (si todavía no están
+   descargados, Odoo los trae de Sifende; si Sifende aún no los entrega, muestra un aviso y se
+   puede reintentar).
    Mientras el documento no esté *Aceptado* (borrador, procesando, rechazado o con error),
    **Enviar** avisa que todavía no hay comprobante fiscal. **Imprimir** sigue imprimiendo el PDF
    de Odoo, pero con el aviso «Sin validez fiscal». Si el documento fue *Cancelado*, **Enviar**
