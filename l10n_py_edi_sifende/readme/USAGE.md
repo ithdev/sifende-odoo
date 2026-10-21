@@ -33,11 +33,20 @@
    confirma con **Cancelar Documento**. Hace falta el rol *Contabilidad > Facturación* y
    estar dentro del plazo que valida Odoo (48 horas las facturas y autofacturas, 7 días las
    notas).
+8. Con el documento *Aceptado*, **Imprimir** (el botón y los reportes del menú) entrega el KuDE
+   que genera Sifende, con el CDC y el QR, en lugar del PDF estándar de Odoo. **Enviar** manda
+   por correo el KuDE y el XML firmado (si todavía no están descargados, Odoo los trae de
+   Sifende; si Sifende aún no los entrega, muestra un aviso y se puede reintentar).
+   Mientras el documento no esté *Aceptado* (borrador, procesando, rechazado o con error),
+   **Enviar** avisa que todavía no hay comprobante fiscal. **Imprimir** sigue imprimiendo el PDF
+   de Odoo, pero con el aviso «Sin validez fiscal». Si el documento fue *Cancelado*, **Enviar**
+   no manda el KuDE y **Imprimir** muestra el aviso de documento cancelado. Las facturas de
+   proveedor y las de otros proveedores de EDI conservan el comportamiento estándar de Odoo.
 
-8. En guaraníes, Sifende redondea el total hacia abajo a múltiplos de 50 y exige que los pagos
+9. En guaraníes, Sifende redondea el total hacia abajo a múltiplos de 50 y exige que los pagos
    y las cuotas lo cubran: el conector reparte los montos de Odoo en proporción y la última
    cuota absorbe el resto.
-9. Si Sifende responde que el número ya está en uso, el documento queda en *Error*. Suba
+10. Si Sifende responde que el número ya está en uso, el documento queda en *Error*. Suba
    *Número Desde* del timbrado al siguiente número libre del punto (panel de Sifende >
    Numeración) y pulse **Renumerar**: el documento toma el siguiente número libre, nunca uno que
    Sifende ya informó, y se envía de nuevo con **Enviar a EDI**.
