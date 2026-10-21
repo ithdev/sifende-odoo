@@ -42,6 +42,12 @@ GROUP_BILLING = "account.group_account_invoice"
 GROUP_MANAGER = "account.group_account_manager"
 READ_GROUPS = (GROUP_READONLY, GROUP_BILLING)
 
+KEY_PREFIX_ENVIRONMENTS = {
+    "sk_live_": "prod",
+    "sk_sandbox_": "test",
+    "sk_test_": "test",
+}
+
 
 class SifendeTransportError(Exception):
     """Timeout o conexión caída: la solicitud pudo no haber llegado."""
@@ -159,6 +165,35 @@ class EDIConnector(models.Model):
             ):
                 raise ValidationError(self._sifende_insecure_url_message())
 
+    @api.constrains("environment", "sifende_api_key")
+    def _check_sifende_environment(self):
+        for connector in self.sudo():
+            if connector.provider_type == "sifende":
+                connector._sifende_check_environment(ValidationError)
+
+    def _sifende_key_environment(self):
+        key = self.sudo().sifende_api_key or ""
+        for prefix, environment in KEY_PREFIX_ENVIRONMENTS.items():
+            if key.startswith(prefix):
+                return environment
+        return None
+
+    def _sifende_check_environment(self, error=UserError):
+        self.ensure_one()
+        key_environment = self._sifende_key_environment()
+        if key_environment and key_environment != self.environment:
+            labels = dict(self._fields["environment"].selection)
+            raise error(
+                self.env._(
+                    "El conector está en ambiente «%(local)s» pero la API key es de "
+                    "«%(remote)s» (prefijo %(prefix)s). Cambie el ambiente del "
+                    "conector o use una API key del mismo ambiente.",
+                    local=labels[self.environment],
+                    remote=labels[key_environment],
+                    prefix=mask_key(self.sudo().sifende_api_key),
+                )
+            )
+
     def _sifende_insecure_url_message(self):
         return self.env._(
             "La URL de Sifende debe usar HTTPS; HTTP solo se admite para localhost."
@@ -188,6 +223,7 @@ class EDIConnector(models.Model):
         if self.provider_type != "sifende":
             return super().send_document(invoice_data)
         self._sifende_check_access(GROUP_BILLING)
+        self._sifende_check_environment()
         return self._sifende_send_document(invoice_data)
 
     @api.private
@@ -202,6 +238,7 @@ class EDIConnector(models.Model):
         if self.provider_type != "sifende":
             return super().cancel_document(document_id, reason)
         self._sifende_check_access(GROUP_BILLING)
+        self._sifende_check_environment()
         return self._sifende_cancel_document(document_id, reason)
 
     @api.private
@@ -209,6 +246,7 @@ class EDIConnector(models.Model):
         if self.provider_type != "sifende":
             return super().inutilize_range(data)
         self._sifende_check_access(GROUP_MANAGER)
+        self._sifende_check_environment()
         return self._sifende_inutilize_range(data)
 
     @api.private
@@ -227,6 +265,7 @@ class EDIConnector(models.Model):
         if self.provider_type != "sifende":
             return super().test_connection()
         self._sifende_check_access(GROUP_MANAGER)
+        self._sifende_check_environment()
         return self._sifende_test_connection()
 
     def _sifende_fetch_xml(self, cdc, document=None):

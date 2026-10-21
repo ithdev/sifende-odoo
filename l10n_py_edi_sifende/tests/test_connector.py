@@ -75,13 +75,17 @@ class TestConnector(SifendeCommon):
         self.assertIn("Listo para emitir: No", params["message"])
 
     def test_test_connection_falla_si_la_clave_es_de_otro_ambiente(self):
-        self.connector.environment = "prod"
+        self.connector.write(
+            {"environment": "prod", "sifende_api_key": "sk_live_clave-ficticia"}
+        )
         self.route_taxpayer(taxpayer(ambiente="DEV"))
         with self.assertRaisesRegex(UserError, "ambiente DEV"):
             self.connector.test_connection()
 
     def test_test_connection_prod_con_clave_prod(self):
-        self.connector.environment = "prod"
+        self.connector.write(
+            {"environment": "prod", "sifende_api_key": "sk_live_clave-ficticia"}
+        )
         self.route_taxpayer(taxpayer(ambiente="PROD"))
         self.assertEqual(
             self.message(self.connector.test_connection())["type"], "success"
@@ -109,7 +113,7 @@ class TestConnector(SifendeCommon):
         self.route_taxpayer(taxpayer(ambiente="SANDBOX"))
         self.connector.test_connection()
         self.assertEqual(self.connector.sifende_ambiente, "SANDBOX")
-        self.connector.sifende_api_key = "sk_live_otra-clave-ficticia"
+        self.connector.sifende_api_key = "sk_test_otra-clave-ficticia"
         self.assertFalse(self.connector.sifende_ambiente)
 
     def test_test_connection_clave_invalida(self):
