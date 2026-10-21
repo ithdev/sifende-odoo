@@ -13,3 +13,4 @@ from . import test_notes_and_stamps
 from . import test_numbering
 from . import test_frozen_payment
 from . import test_form_details
+from . import test_partner_identity
