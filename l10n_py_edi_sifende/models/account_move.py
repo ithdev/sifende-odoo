@@ -21,6 +21,9 @@ CANCEL_WATCH_DAYS = 10
 CANCEL_RECHECK_HOURS = 1
 FAILED_RECHECK_HOURS = 1
 PAYMENT_CHEQUE = "2"
+PAYMENT_CARDS = ("3", "4")
+CHEQUE_NUMBER_MAX = 8
+CHEQUE_BANK_RANGE = (4, 20)
 DOC_INVOICE = "1"
 DOC_CREDIT_NOTE = "5"
 DOC_DEBIT_NOTE = "6"
@@ -31,6 +34,7 @@ FROZEN_PAYMENT_FIELDS = (
     "l10n_py_payment_type",
     "l10n_py_sifende_cheque_numero",
     "l10n_py_sifende_cheque_banco",
+    "l10n_py_sifende_tarjeta_marca",
     "invoice_payment_term_id",
 )
 WEBHOOK_STATES = {
@@ -46,6 +50,8 @@ class AccountMove(models.Model):
     l10n_py_authorization_id = fields.Many2one(
         compute="_compute_l10n_py_authorization_id", store=True, readonly=False
     )
+    l10n_py_receipt_id = fields.Char(string="ID de recibo")
+    l10n_py_sifende_enabled = fields.Boolean(compute="_compute_l10n_py_sifende_enabled")
     l10n_py_sifende_intento = fields.Integer(
         string="Intento de envío a Sifende",
         default=0,
@@ -90,11 +96,28 @@ class AccountMove(models.Model):
         string="Kilómetros del recorrido (NRE)"
     )
     l10n_py_sifende_cheque_numero = fields.Char(
-        string="Número del cheque (SIFEN)", size=8, copy=False
+        string="Número del cheque (SIFEN)", copy=False
     )
     l10n_py_sifende_cheque_banco = fields.Char(
-        string="Banco del cheque (SIFEN)", size=20, copy=False
+        string="Banco del cheque (SIFEN)", copy=False
     )
+    l10n_py_sifende_tarjeta_marca = fields.Selection(
+        [
+            ("1", "Visa"),
+            ("2", "Mastercard"),
+            ("3", "American Express"),
+            ("4", "Maestro"),
+            ("5", "Panal"),
+            ("6", "Cabal"),
+            ("99", "Otra"),
+        ],
+        string="Marca de la tarjeta (SIFEN)",
+        copy=False,
+    )
+
+    def _compute_l10n_py_sifende_enabled(self):
+        for move in self:
+            move.l10n_py_sifende_enabled = bool(move._l10n_py_sifende_connector())
 
     @api.depends("reversed_entry_id", "l10n_latam_document_type_id")
     def _compute_l10n_py_sifende_motivo_emision(self):
@@ -293,6 +316,10 @@ class AccountMove(models.Model):
                 )
             ],
         }
+        if self.l10n_py_payment_type in PAYMENT_CARDS and (
+            self.l10n_py_sifende_tarjeta_marca
+        ):
+            extra["tarjeta"] = {"tipoTarjeta": int(self.l10n_py_sifende_tarjeta_marca)}
         if code in (DOC_CREDIT_NOTE, DOC_DEBIT_NOTE):
             extra["motivoEmision"] = (
                 int(self.l10n_py_sifende_motivo_emision or 0) or None
@@ -443,15 +470,24 @@ class AccountMove(models.Model):
         number = self.l10n_py_sifende_cheque_numero or ""
         bank = (self.l10n_py_sifende_cheque_banco or "").strip()
         errors = []
-        if not (number.isascii() and number.isdigit()):
+        if not (
+            number.isascii() and number.isdigit() and len(number) <= CHEQUE_NUMBER_MAX
+        ):
             errors.append(
                 self.env._(
-                    "Pago con cheque: indique el número del cheque (solo dígitos)."
+                    "Pago con cheque: indique el número del cheque (solo dígitos, "
+                    "hasta %(max)s).",
+                    max=CHEQUE_NUMBER_MAX,
                 )
             )
-        if not 4 <= len(bank) <= 20:
+        if not CHEQUE_BANK_RANGE[0] <= len(bank) <= CHEQUE_BANK_RANGE[1]:
             errors.append(
-                self.env._("Pago con cheque: indique el banco (de 4 a 20 caracteres).")
+                self.env._(
+                    "Pago con cheque: indique el banco (de %(min)s a %(max)s "
+                    "caracteres).",
+                    min=CHEQUE_BANK_RANGE[0],
+                    max=CHEQUE_BANK_RANGE[1],
+                )
             )
         return errors
 
@@ -664,6 +700,27 @@ class AccountMove(models.Model):
                 "l10n_py_kude_filename": f"KUDE_{self.l10n_py_cdc}.pdf",
             }
         )
+        self._l10n_py_sifende_attach(f"KUDE_{self.l10n_py_cdc}.pdf", pdf)
+
+    def _l10n_py_sifende_attach(self, name, content):
+        # los binarios de OCA no salen en el chatter: se adjuntan también como archivos
+        self.ensure_one()
+        attachments = self.env["ir.attachment"].sudo()
+        domain = [
+            ("res_model", "=", "account.move"),
+            ("res_id", "=", self.id),
+            ("res_field", "=", False),
+            ("name", "=", name),
+        ]
+        if not attachments.search_count(domain):
+            attachments.create(
+                {
+                    "name": name,
+                    "raw": content,
+                    "res_model": "account.move",
+                    "res_id": self.id,
+                }
+            )
 
     # === Cron ===
 
@@ -833,6 +890,7 @@ class AccountMove(models.Model):
                         "l10n_py_edi_xml_filename": f"{self.l10n_py_cdc}.xml",
                     }
                 )
+                self._l10n_py_sifende_attach(f"{self.l10n_py_cdc}.xml", xml)
             except (UserError, SifendeTransportError) as e:
                 pending = True
                 _logger.info("XML de %s pendiente: %s", self.l10n_py_cdc, e)
