@@ -262,13 +262,19 @@ class SifendeRequestBuilder:
                 "bancoCheque": entrega["cheque"]["bancoCheque"].strip(),
             }
         if payment_type in CARD_PAYMENT_TYPES:
+            brand = int(
+                ((data.get("sifende") or {}).get("tarjeta") or {}).get("tipoTarjeta")
+                or SIFEN_CARD_OTHER
+            )
             pago["tarjeta"] = {
-                "tipoTarjeta": self._name("tipoTarjeta", SIFEN_CARD_OTHER),
-                "descripcionTipoTarjeta": "Otro",
+                "tipoTarjeta": self._name("tipoTarjeta", brand),
                 "formaProcesamientoPago": self._name(
                     "formaProcesamientoPago", SIFEN_CARD_PROCESSING_OTHER
                 ),
             }
+            # Sifende deriva la descripción del catálogo y la exige solo con OTRO
+            if brand == SIFEN_CARD_OTHER:
+                pago["tarjeta"]["descripcionTipoTarjeta"] = "Otro"
         return pago
 
     def _credito(self, credit, extra, decimals, currency=PYG):

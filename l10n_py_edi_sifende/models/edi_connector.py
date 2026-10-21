@@ -42,6 +42,8 @@ GROUP_BILLING = "account.group_account_invoice"
 GROUP_MANAGER = "account.group_account_manager"
 READ_GROUPS = (GROUP_READONLY, GROUP_BILLING)
 
+SOFT_RELOAD = {"type": "ir.actions.client", "tag": "soft_reload"}
+
 KEY_PREFIX_ENVIRONMENTS = {
     "sk_live_": "prod",
     "sk_sandbox_": "test",
@@ -113,6 +115,9 @@ class EDIConnector(models.Model):
         selection_add=[("sifende", "Sifende")],
         ondelete={"sifende": "cascade"},
     )
+    environment = fields.Selection(string="Ambiente")
+    timeout = fields.Integer(string="Tiempo de espera (segundos)")
+    active = fields.Boolean(string="Activo")
     sifende_api_key = fields.Char(
         string="API key de Sifende",
         groups="base.group_system",
@@ -570,6 +575,7 @@ class EDIConnector(models.Model):
                 ),
                 "type": "success" if ok else "warning",
                 "sticky": not ok,
+                "next": SOFT_RELOAD,
             },
         }
 
@@ -764,6 +770,7 @@ class EDIConnector(models.Model):
                 "message": message,
                 "type": notification_type,
                 "sticky": notification_type != "success",
+                "next": SOFT_RELOAD,
             },
         }
 

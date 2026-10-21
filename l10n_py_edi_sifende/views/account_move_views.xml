@@ -11,6 +11,14 @@
         <field name="model">account.move</field>
         <field name="inherit_id" ref="l10n_py_edi_base.view_move_form_edi" />
         <field name="arch" type="xml">
+            <xpath expr="//field[@name='l10n_py_edi_batch_id']" position="after">
+                <field
+                    name="l10n_py_qr_code"
+                    widget="image"
+                    options="{'size': [128, 128]}"
+                    invisible="not l10n_py_qr_code"
+                />
+            </xpath>
             <xpath expr="//field[@name='l10n_py_security_code']" position="after">
                 <field name="l10n_py_sifende_numero_ocupado" invisible="1" />
                 <field
@@ -25,12 +33,35 @@
                 <attribute name="type">action</attribute>
                 <attribute name="groups">account.group_account_invoice</attribute>
             </xpath>
+            <xpath expr="//field[@name='invoice_date']" position="after">
+                <field name="l10n_py_sifende_enabled" invisible="1" />
+            </xpath>
             <xpath expr="//button[@name='action_send_edi']" position="attributes">
+                <attribute name="groups">account.group_account_invoice</attribute>
                 <attribute
                     name="invisible"
                 >state != 'posted' or l10n_py_edi_status in ['sent', 'accepted', 'processing']</attribute>
             </xpath>
+            <xpath expr="//button[@name='action_preview_xml']" position="attributes">
+                <attribute
+                    name="invisible"
+                >l10n_py_sifende_enabled or l10n_py_edi_status in ['sent', 'accepted', 'processing']</attribute>
+            </xpath>
+            <xpath expr="//button[@name='action_preview_kude']" position="attributes">
+                <attribute
+                    name="invisible"
+                >l10n_py_sifende_enabled or l10n_py_edi_status in ['sent', 'accepted', 'processing']</attribute>
+            </xpath>
+            <xpath
+                expr="//button[@name='action_l10n_py_preview_qr']"
+                position="attributes"
+            >
+                <attribute
+                    name="invisible"
+                >l10n_py_sifende_enabled or l10n_py_edi_status in ['sent', 'accepted', 'processing']</attribute>
+            </xpath>
             <xpath expr="//button[@name='action_retry_edi']" position="attributes">
+                <attribute name="groups">account.group_account_invoice</attribute>
                 <attribute
                     name="invisible"
                 >state != 'posted' or l10n_py_sifende_numero_ocupado or l10n_py_edi_status not in ['error', 'rejected']</attribute>
@@ -51,6 +82,11 @@
                 >l10n_py_cdc or l10n_py_edi_status in ['sent', 'processing', 'accepted']</attribute>
             </xpath>
             <xpath expr="//field[@name='l10n_py_payment_type']" position="after">
+                <field
+                    name="l10n_py_sifende_tarjeta_marca"
+                    invisible="l10n_py_payment_type not in ['3', '4']"
+                    readonly="l10n_py_cdc or l10n_py_edi_status in ['sent', 'processing', 'accepted']"
+                />
                 <field
                     name="l10n_py_sifende_cheque_numero"
                     invisible="l10n_py_payment_type != '2'"
