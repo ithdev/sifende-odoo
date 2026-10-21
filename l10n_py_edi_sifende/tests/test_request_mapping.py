@@ -1,5 +1,6 @@
 from datetime import date
 
+from odoo.exceptions import UserError
 from odoo.tests import tagged
 
 from ..services.request_builder import split_installments
@@ -88,6 +89,44 @@ class TestRequestMapping(SifendeCommon):
                 "formaProcesamientoPago": "OTRO",
             },
         )
+
+    def test_pago_con_cheque_informa_numero_y_banco(self):
+        move = self.make_move(
+            "fe",
+            l10n_py_payment_type="2",
+            l10n_py_sifende_cheque_numero="1234",
+            l10n_py_sifende_cheque_banco="  Banco Continental ",
+        )
+        pago = self.sent_payload(move)["pagos"][0]
+        self.assertEqual(pago["tipoPago"], "CHEQUE")
+        self.assertEqual(
+            pago["cheque"],
+            {"numeroCheque": "1234", "bancoCheque": "Banco Continental"},
+        )
+
+    def test_pago_con_cheque_exige_numero_y_banco_antes_de_enviar(self):
+        move = self.make_move("fe", l10n_py_payment_type="2")
+        with self.assertRaisesRegex(UserError, "número del cheque") as error:
+            move.action_send_edi()
+        self.assertIn("banco", str(error.exception))
+        self.assertFalse(self.fake.calls_to("POST", ".*"))
+        move.write(
+            {
+                "l10n_py_sifende_cheque_numero": "12 34",
+                "l10n_py_sifende_cheque_banco": "BCP",
+            }
+        )
+        with self.assertRaisesRegex(UserError, "solo dígitos"):
+            move.action_send_edi()
+
+    def test_el_cheque_de_una_factura_a_credito_no_se_exige(self):
+        move = self.make_move(
+            "fe",
+            l10n_py_payment_type="2",
+            invoice_payment_term_id=self.term([(30, 100)]).id,
+        )
+        payload = self.sent_payload(move)
+        self.assertEqual(payload["condicionOperacion"], "CREDITO")
 
     def test_unidad_de_medida_descuento_y_precio_con_iva(self):
         lines = [

@@ -119,7 +119,11 @@ Usage
    la pestaña *Facturación electrónica*. En una nota de remisión,
    indique también el responsable de la emisión y los kilómetros del
    recorrido.
-5. Si SIFEN rechazó un documento y se cambió la fecha o el código de
+5. Si una factura al contado se paga con *Cheque* (*Tipo de Pago* en la
+   pestaña *Facturación electrónica*), complete el número del cheque
+   (solo dígitos, hasta 8) y el banco (de 4 a 20 caracteres): Sifende
+   los exige.
+6. Si SIFEN rechazó un documento y se cambió la fecha o el código de
    seguridad, Sifende pide inutilizar el número y emitir uno nuevo
    (*Facturación electrónica > Inutilización de números*).
 

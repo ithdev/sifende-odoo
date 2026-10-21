@@ -13,6 +13,7 @@ SIFEN_MOTIVE_OTHER = 99
 SIFEN_CARD_OTHER = 99
 SIFEN_CARD_PROCESSING_OTHER = 9
 CARD_PAYMENT_TYPES = (3, 4)
+CHEQUE_PAYMENT_TYPE = 2
 PRINTED_DOC_VEHICLE_PLATE = 2
 
 NCM_RE = re.compile(r"^(?=.*[1-9])\d{6,8}$")
@@ -260,6 +261,11 @@ class SifendeRequestBuilder:
         }
         if entrega["moneda"] != PYG and data.get("tipoCambio"):
             pago["tipoCambio"] = _number(data["tipoCambio"])
+        if payment_type == CHEQUE_PAYMENT_TYPE:
+            pago["cheque"] = {
+                "numeroCheque": entrega["cheque"]["numeroCheque"],
+                "bancoCheque": entrega["cheque"]["bancoCheque"].strip(),
+            }
         if payment_type in CARD_PAYMENT_TYPES:
             pago["tarjeta"] = {
                 "tipoTarjeta": self._name("tipoTarjeta", SIFEN_CARD_OTHER),

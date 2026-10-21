@@ -19,6 +19,8 @@ CRON_TIME_BUDGET = 45
 # la cancelación vence a los 7 días de la emisión (OCA) y sobra un margen
 CANCEL_WATCH_DAYS = 10
 CANCEL_RECHECK_HOURS = 1
+PAYMENT_CHEQUE = "2"
+DOC_INVOICE = "1"
 DOC_CREDIT_NOTE = "5"
 DOC_DEBIT_NOTE = "6"
 DOC_DELIVERY_NOTE = "7"
@@ -72,6 +74,12 @@ class AccountMove(models.Model):
     )
     l10n_py_sifende_km_recorrido = fields.Integer(
         string="Kilómetros del recorrido (NRE)"
+    )
+    l10n_py_sifende_cheque_numero = fields.Char(
+        string="Número del cheque (SIFEN)", size=8, copy=False
+    )
+    l10n_py_sifende_cheque_banco = fields.Char(
+        string="Banco del cheque (SIFEN)", size=20, copy=False
     )
 
     @api.depends("reversed_entry_id", "l10n_latam_document_type_id")
@@ -170,23 +178,29 @@ class AccountMove(models.Model):
             item["descuentoParticularPorcentaje"] = line.discount
         return item
 
+    def _l10n_py_sifende_is_cash(self):
+        self.ensure_one()
+        due_dates = self._l10n_py_sifende_due_dates()
+        return not due_dates or due_dates == [self.invoice_date]
+
     def _prepare_payment_condition(self):
         if not self._l10n_py_sifende_connector():
             return super()._prepare_payment_condition()
         self.ensure_one()
         due_dates = self._l10n_py_sifende_due_dates()
-        if not due_dates or due_dates == [self.invoice_date]:
-            return {
-                "tipo": 1,
-                "entregas": [
-                    {
-                        "tipo": int(self.l10n_py_payment_type or "1"),
-                        "monto": str(self.amount_total),
-                        "moneda": self.currency_id.name,
-                        "cambio": 0,
-                    }
-                ],
+        if self._l10n_py_sifende_is_cash():
+            payment = {
+                "tipo": int(self.l10n_py_payment_type or "1"),
+                "monto": str(self.amount_total),
+                "moneda": self.currency_id.name,
+                "cambio": 0,
             }
+            if self.l10n_py_payment_type == PAYMENT_CHEQUE:
+                payment["cheque"] = {
+                    "numeroCheque": self.l10n_py_sifende_cheque_numero,
+                    "bancoCheque": self.l10n_py_sifende_cheque_banco,
+                }
+            return {"tipo": 1, "entregas": [payment]}
         term_days = (due_dates[0] - self.invoice_date).days
         return {
             "tipo": 2,
@@ -222,6 +236,12 @@ class AccountMove(models.Model):
                 self.env._("El número de timbrado debe ser numérico para Sifende.")
             )
         if (
+            code == DOC_INVOICE
+            and self.l10n_py_payment_type == PAYMENT_CHEQUE
+            and self._l10n_py_sifende_is_cash()
+        ):
+            errors.extend(self._l10n_py_sifende_cheque_errors())
+        if (
             code in (DOC_CREDIT_NOTE, DOC_DEBIT_NOTE)
             and not self.l10n_py_sifende_motivo_emision
         ):
@@ -239,6 +259,22 @@ class AccountMove(models.Model):
                         "Nota de Remisión: los datos de transporte son obligatorios."
                     )
                 )
+        return errors
+
+    def _l10n_py_sifende_cheque_errors(self):
+        number = self.l10n_py_sifende_cheque_numero or ""
+        bank = (self.l10n_py_sifende_cheque_banco or "").strip()
+        errors = []
+        if not (number.isascii() and number.isdigit()):
+            errors.append(
+                self.env._(
+                    "Pago con cheque: indique el número del cheque (solo dígitos)."
+                )
+            )
+        if not 4 <= len(bank) <= 20:
+            errors.append(
+                self.env._("Pago con cheque: indique el banco (de 4 a 20 caracteres).")
+            )
         return errors
 
     # === Envío y respuesta ===
