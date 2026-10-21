@@ -3,17 +3,19 @@
    los mensajes de SIFEN en el campo *Mensaje EDI*. Si el webhook está registrado, Sifende
    avisa a Odoo en cuanto SIFEN responde; si no, o si el aviso se pierde, lo hace el cron
    «Sifende: verificar estado de documentos» (cada 5 minutos).
-3. Si el documento queda *Rechazado* o con *Error*, corrija el dato y pulse **Reintentar**.
-   Un reintento tras una corrección usa una clave de idempotencia nueva. Si el fallo fue de
-   conexión, se reintenta con la misma clave y no se duplica el documento.
+3. Si el documento queda con *Error*, o *Rechazado* antes de llegar a SIFEN (por ejemplo por un
+   campo obligatorio), corrija el dato y pulse **Reintentar**. Un reintento tras una corrección
+   usa una clave de idempotencia nueva. Si el fallo fue de conexión, se reintenta con la misma
+   clave y no se duplica el documento.
 4. En una nota de crédito o de débito, elija el *Motivo de emisión* en la pestaña
    *Facturación electrónica*. En una nota de remisión, indique también el responsable de la
    emisión y los kilómetros del recorrido.
 5. Si una factura al contado se paga con *Cheque* (*Tipo de Pago* en la pestaña
    *Facturación electrónica*), complete el número del cheque (solo dígitos, hasta 8) y el banco
    (de 4 a 20 caracteres): Sifende los exige.
-6. Si SIFEN rechazó un documento y se cambió la fecha o el código de seguridad, Sifende no
-   permite reutilizar ese número. Con el rol *Contabilidad > Administrador*, abra
+6. Si SIFEN rechaza un documento ya enviado (*Rechazado* con el CDC cargado), Sifende no
+   permite reenviar ese número ni con los mismos datos, y **Reintentar** muestra el
+   procedimiento en lugar de enviar. Con el rol *Contabilidad > Administrador*, abra
    *Facturación Electrónica > Inutilización de números* (dentro de la aplicación de
    Facturación o Contabilidad), cree la inutilización con el timbrado y el número del
    documento rechazado, y pulse **Enviar al SIFEN**. Luego pulse **Restablecer a borrador**

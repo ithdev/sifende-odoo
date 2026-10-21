@@ -144,9 +144,10 @@ class TestWebhookController(SifendeCommon, HttpCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(move.l10n_py_edi_status, "rejected")
-        self.assertEqual(
-            move.l10n_py_edi_message, "1001: CDC duplicado\n1002: Otro error"
+        self.assertTrue(
+            move.l10n_py_edi_message.startswith("1001: CDC duplicado\n1002: Otro error")
         )
+        self.assertIn("Inutilización de números", move.l10n_py_edi_message)
         self.assertFalse(move.l10n_py_kude_pdf)
 
     def test_cancelado_cancela_un_documento_aceptado(self):
@@ -163,22 +164,6 @@ class TestWebhookController(SifendeCommon, HttpCase):
         self.post("documento.rechazado", estado="RECHAZADO")
         self.assertEqual(move.l10n_py_edi_status, "accepted")
         self.assertEqual(len(self.fake.calls_to("GET", "/status/")), 1)
-
-    def test_un_rechazo_antiguo_no_pisa_la_aprobacion_del_reintento(self):
-        move = self.processing_move()
-        self.route_status("RECHAZADO", mensajeRechazo="CDC inválido")
-        self.env["account.move"]._cron_sifende_check_status()
-        self.assertEqual(move.l10n_py_edi_status, "rejected")
-        self.route_status("PENDIENTE")
-        self.route_emission(self.emission_response())
-        move.action_retry_edi()
-        self.assertEqual(move.l10n_py_edi_status, "processing")
-        self.post("documento.rechazado", estado="RECHAZADO")
-        self.assertEqual(move.l10n_py_edi_status, "processing")
-        self.route_status("APROBADO")
-        self.post("documento.aprobado")
-        self.assertEqual(move.l10n_py_edi_status, "accepted")
-        self.assertTrue(move.l10n_py_kude_pdf)
 
     def test_un_aviso_que_contradice_a_la_consulta_manda_la_consulta(self):
         move = self.processing_move()

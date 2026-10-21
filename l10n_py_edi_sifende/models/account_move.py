@@ -341,13 +341,23 @@ class AccountMove(models.Model):
 
     def action_retry_edi(self):
         self.ensure_one()
-        if (
-            self.l10n_py_edi_status in ("error", "rejected")
-            and self._l10n_py_sifende_connector()
-            and not self.l10n_py_sifende_reintento_misma_clave
-        ):
-            self.l10n_py_sifende_intento += 1
+        if self._l10n_py_sifende_connector():
+            if self.l10n_py_edi_status == "rejected" and self.l10n_py_cdc:
+                raise UserError(self._l10n_py_sifende_rejection_steps())
+            if (
+                self.l10n_py_edi_status in ("error", "rejected")
+                and not self.l10n_py_sifende_reintento_misma_clave
+            ):
+                self.l10n_py_sifende_intento += 1
         return super().action_retry_edi()
+
+    def _l10n_py_sifende_rejection_steps(self):
+        return self.env._(
+            "SIFEN rechazó este documento y su número no se puede reenviar. "
+            "Inutilice el número desde Facturación Electrónica > Inutilización de "
+            "números, pulse Restablecer a borrador y Cancelar en este documento y "
+            "emita uno nuevo."
+        )
 
     def _generate_kude(self):
         self.ensure_one()
@@ -456,8 +466,12 @@ class AccountMove(models.Model):
             self.write(
                 {
                     "l10n_py_edi_status": "rejected",
-                    "l10n_py_edi_message": message
-                    or self.env._("SIFEN rechazó el documento."),
+                    "l10n_py_edi_message": "\n\n".join(
+                        (
+                            message or self.env._("SIFEN rechazó el documento."),
+                            self._l10n_py_sifende_rejection_steps(),
+                        )
+                    ),
                     "l10n_py_sifende_reintento_misma_clave": False,
                 }
             )

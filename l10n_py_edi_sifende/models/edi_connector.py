@@ -348,11 +348,10 @@ class EDIConnector(models.Model):
         elif slug == "document-number-requires-voiding":
             failure["edi_status"] = "rejected"
             failure["error"] = self.env._(
-                "El documento fue rechazado y cambió respecto del envío original, "
-                "así que SIFEN no admite reutilizar ese número. Inutilice el "
-                "número desde Facturación Electrónica > Inutilización de números, "
-                "cancele este documento (Restablecer a borrador y Cancelar) y emita "
-                "uno nuevo. %(detail)s",
+                "El número de este documento ya pertenece a uno rechazado por SIFEN "
+                "y no se puede reenviar. Inutilice el número desde Facturación "
+                "Electrónica > Inutilización de números, cancele este documento "
+                "(Restablecer a borrador y Cancelar) y emita uno nuevo. %(detail)s",
                 detail=response.detail or "",
             )
         elif slug in (
