@@ -351,14 +351,23 @@ class AccountMove(models.Model):
     def _l10n_py_sifende_sync(self, connector):
         self.ensure_one()
         if self.l10n_py_edi_status == "processing":
-            result = (
-                connector._sifende_check_status(self.l10n_py_cdc).get("result") or {}
-            )
-            self._l10n_py_sifende_apply_state(
-                result.get("estado"), result.get("mensajeRechazo")
-            )
+            self._l10n_py_sifende_refresh_state(connector)
         if self.l10n_py_edi_status == "accepted":
             self._l10n_py_sifende_fetch_files(connector)
+
+    def _l10n_py_sifende_refresh_state(self, connector, announced=None, message=None):
+        self.ensure_one()
+        result = connector._sifende_check_status(self.l10n_py_cdc).get("result") or {}
+        state = result.get("estado")
+        if not (announced and message and self._sifende_same_outcome(announced, state)):
+            message = result.get("mensajeRechazo")
+        self._l10n_py_sifende_apply_state(state, message)
+
+    @staticmethod
+    def _sifende_same_outcome(announced, state):
+        if announced == "APROBADO":
+            return state in APPROVED_STATES
+        return state == announced
 
     def _l10n_py_sifende_apply_state(self, state, message=None):
         self.ensure_one()
@@ -395,16 +404,19 @@ class AccountMove(models.Model):
 
     def _l10n_py_sifende_apply_webhook(self, connector, event_type, data):
         self.ensure_one()
-        state = WEBHOOK_STATES[event_type]
-        if event_type == "documento.aprobado" and data.get("estado") in APPROVED_STATES:
-            state = data["estado"]
-        results = data.get("resultados")
-        message = "\n".join(
-            f"{result.get('codigo')}: {result['mensaje']}"
-            for result in results or []
-            if isinstance(result, dict) and result.get("mensaje")
-        )
-        self._l10n_py_sifende_apply_state(state, message or None)
+        announced = WEBHOOK_STATES[event_type]
+        status = self.l10n_py_edi_status
+        # los avisos pueden llegar desordenados: el estado vigente lo dice la consulta
+        if status == "processing" or (
+            announced == "CANCELADO" and status == "accepted"
+        ):
+            results = data.get("resultados")
+            message = "\n".join(
+                f"{result.get('codigo')}: {result['mensaje']}"
+                for result in results or []
+                if isinstance(result, dict) and result.get("mensaje")
+            )
+            self._l10n_py_sifende_refresh_state(connector, announced, message or None)
         if self.l10n_py_edi_status == "accepted":
             self._l10n_py_sifende_fetch_files(connector, kude_wait=0)
 

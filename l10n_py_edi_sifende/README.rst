@@ -87,8 +87,9 @@ Configuration
    ``documento.cancelado``, y guarda el secreto de firma, que solo ven
    los administradores. Si la URL ya estaba registrada en Sifende, el
    botón lo informa y hay que pulsar **Rotar secreto** para obtener un
-   secreto. **Quitar webhook** lo elimina en Sifende. El cron sigue
-   activo como respaldo.
+   secreto. **Quitar webhook** lo elimina en Sifende. Cada aviso solo
+   dispara una consulta del estado vigente en Sifende, así que un aviso
+   atrasado no pisa el estado real. El cron sigue activo como respaldo.
 8. Con varias bases de datos en el mismo servidor, la URL pública debe
    resolver a la base correcta (``dbfilter`` o el subdominio), porque
    Sifende no envía el nombre de la base.

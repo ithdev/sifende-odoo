@@ -7,6 +7,8 @@ import uuid
 from datetime import timedelta
 from unittest.mock import patch
 
+import requests
+
 from odoo import fields
 from odoo.tests import HttpCase, tagged
 
@@ -35,6 +37,14 @@ class TestWebhookController(SifendeCommon, HttpCase):
             "GET",
             rf"/documento-electronico/{CDC}/kude$",
             FakeResponse(200, content=PDF, headers={"Content-Type": "application/pdf"}),
+        )
+        self.route_status("APROBADO")
+
+    def route_status(self, *states, **extra):
+        self.fake.add(
+            "GET",
+            rf"/documento-electronico/status/{CDC}$",
+            *(self.status_response(state, **extra) for state in states),
         )
 
     def processing_move(self, **vals):
@@ -109,10 +119,11 @@ class TestWebhookController(SifendeCommon, HttpCase):
         self.assertEqual(base64.b64decode(move.l10n_py_edi_xml), XML)
         self.assertEqual(base64.b64decode(move.l10n_py_kude_pdf), PDF)
         self.assertFalse(move.l10n_py_sifende_archivos_pendientes)
-        self.assertFalse(self.fake.calls_to("GET", "/status/"))
+        self.assertEqual(len(self.fake.calls_to("GET", "/status/")), 1)
 
     def test_aprobado_con_observacion_guarda_los_mensajes(self):
         move = self.processing_move()
+        self.route_status("APROBADO_OBSERVACION")
         self.post(
             estado="APROBADO_OBSERVACION",
             resultados=[{"codigo": "0301", "mensaje": "Observación de SIFEN"}],
@@ -122,6 +133,7 @@ class TestWebhookController(SifendeCommon, HttpCase):
 
     def test_rechazado_deja_los_mensajes_de_sifen(self):
         move = self.processing_move()
+        self.route_status("RECHAZADO")
         response = self.post(
             "documento.rechazado",
             estado="RECHAZADO",
@@ -140,6 +152,7 @@ class TestWebhookController(SifendeCommon, HttpCase):
     def test_cancelado_cancela_un_documento_aceptado(self):
         move = self.processing_move()
         self.post("documento.aprobado")
+        self.route_status("CANCELADO")
         response = self.post("documento.cancelado", estado="CANCELADO")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(move.l10n_py_edi_status, "cancelled")
@@ -149,6 +162,46 @@ class TestWebhookController(SifendeCommon, HttpCase):
         self.post("documento.aprobado")
         self.post("documento.rechazado", estado="RECHAZADO")
         self.assertEqual(move.l10n_py_edi_status, "accepted")
+        self.assertEqual(len(self.fake.calls_to("GET", "/status/")), 1)
+
+    def test_un_rechazo_antiguo_no_pisa_la_aprobacion_del_reintento(self):
+        move = self.processing_move()
+        self.route_status("RECHAZADO", mensajeRechazo="CDC inválido")
+        self.env["account.move"]._cron_sifende_check_status()
+        self.assertEqual(move.l10n_py_edi_status, "rejected")
+        self.route_status("PENDIENTE")
+        self.route_emission(self.emission_response())
+        move.action_retry_edi()
+        self.assertEqual(move.l10n_py_edi_status, "processing")
+        self.post("documento.rechazado", estado="RECHAZADO")
+        self.assertEqual(move.l10n_py_edi_status, "processing")
+        self.route_status("APROBADO")
+        self.post("documento.aprobado")
+        self.assertEqual(move.l10n_py_edi_status, "accepted")
+        self.assertTrue(move.l10n_py_kude_pdf)
+
+    def test_un_aviso_que_contradice_a_la_consulta_manda_la_consulta(self):
+        move = self.processing_move()
+        self.route_status("APROBADO")
+        self.post("documento.rechazado", estado="RECHAZADO")
+        self.assertEqual(move.l10n_py_edi_status, "accepted")
+
+    def test_un_cancelado_antiguo_no_cancela_un_documento_vigente(self):
+        move = self.processing_move()
+        self.post("documento.aprobado")
+        self.post("documento.cancelado", estado="CANCELADO")
+        self.assertEqual(move.l10n_py_edi_status, "accepted")
+
+    def test_sin_respuesta_a_la_consulta_el_documento_queda_para_el_cron(self):
+        move = self.processing_move()
+        self.fake.add(
+            "GET", rf"/documento-electronico/status/{CDC}$", requests.Timeout()
+        )
+        self.assertEqual(self.post("documento.rechazado").status_code, 200)
+        self.assertEqual(move.l10n_py_edi_status, "processing")
+        self.route_status("RECHAZADO")
+        self.env["account.move"]._cron_sifende_check_status()
+        self.assertEqual(move.l10n_py_edi_status, "rejected")
 
     def test_kude_en_preparacion_queda_pendiente_para_el_cron(self):
         move = self.processing_move()
