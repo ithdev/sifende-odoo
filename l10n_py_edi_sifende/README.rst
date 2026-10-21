@@ -49,6 +49,11 @@ responde, y un cron que consulta cada 5 minutos sirve de respaldo;
 cuando SIFEN aprueba, el documento queda «Aceptado» con el XML firmado y
 el KuDE adjuntos.
 
+El cron también vuelve a consultar cada hora los documentos aceptados
+dentro de su plazo de cancelación, por si se cancelaron en Sifende y se
+perdió el aviso. En cada ejecución consulta hasta 200 documentos por
+conector, empezando por los que hace más tiempo no se consultan.
+
 **Table of contents**
 
 .. contents::

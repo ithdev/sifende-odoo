@@ -1,0 +1,161 @@
+from datetime import timedelta
+from unittest.mock import patch
+
+from odoo import fields
+from odoo.tests import tagged
+
+from odoo.addons.l10n_py_edi_sifende.models import account_move
+
+from .common import FakeResponse, SifendeCommon
+
+PDF = b"%PDF-1.4 kude"
+XML = b"<rDE/>"
+
+
+@tagged("post_install", "-at_install", "l10n_py_edi_sifende")
+class TestCron(SifendeCommon):
+    def make_tracked(self, count, status="processing", days_ago=0, **vals):
+        today = fields.Date.context_today(self.env["account.move"])
+        today -= timedelta(days=days_ago)
+        moves = self.env["account.move"]
+        for index in range(count):
+            move = self.make_move("fe", invoice_date=today)
+            move.write(
+                {
+                    "l10n_py_edi_status": status,
+                    "l10n_py_cdc": f"{index:04d}".rjust(44, "1"),
+                    **vals,
+                }
+            )
+            moves |= move
+        return moves
+
+    def route_status(self, move, state, **extra):
+        self.fake.add(
+            "GET",
+            rf"/status/{move.l10n_py_cdc}$",
+            self.status_response(state, cdc=move.l10n_py_cdc, **extra),
+        )
+
+    def route_files(self, move):
+        for suffix, content, kind in (("xml", XML, "xml"), ("kude", PDF, "pdf")):
+            self.fake.add(
+                "GET",
+                rf"/documento-electronico/{move.l10n_py_cdc}/{suffix}$",
+                FakeResponse(
+                    200,
+                    content=content,
+                    headers={"Content-Type": f"application/{kind}"},
+                ),
+            )
+
+    def run_cron(self):
+        self.env["account.move"]._cron_sifende_check_status()
+
+    def queried(self):
+        return [
+            c.path.rsplit("/", 1)[-1] for c in self.fake.calls_to("GET", "/status/")
+        ]
+
+    # === Lote ===
+
+    def test_el_cron_rota_por_todos_los_documentos_pendientes(self):
+        moves = self.make_tracked(3)
+        for move in moves:
+            self.route_status(move, "PENDIENTE")
+        with patch.object(account_move, "CRON_BATCH_SIZE", 2):
+            self.run_cron()
+            self.run_cron()
+        self.assertEqual(set(self.queried()), set(moves.mapped("l10n_py_cdc")))
+
+    def test_un_documento_que_falla_no_ocupa_siempre_su_lugar_en_el_lote(self):
+        moves = self.make_tracked(3)
+        for move in moves:
+            self.route_status(move, "PENDIENTE")
+        failing = moves[:2]
+        original = type(moves)._l10n_py_sifende_sync
+
+        def sync(record, connector, *args, **kwargs):
+            if record in failing:
+                raise ValueError("falla persistente")
+            return original(record, connector, *args, **kwargs)
+
+        with (
+            patch.object(account_move, "CRON_BATCH_SIZE", 2),
+            patch.object(type(moves), "_l10n_py_sifende_sync", sync),
+            self.assertLogs("odoo.addons.l10n_py_edi_sifende", "ERROR"),
+        ):
+            self.run_cron()
+            self.run_cron()
+        self.assertEqual(self.queried(), [moves[2].l10n_py_cdc])
+        self.assertTrue(all(moves.mapped("l10n_py_sifende_ultima_consulta")))
+
+    def test_el_cron_para_al_agotar_su_presupuesto_de_tiempo(self):
+        moves = self.make_tracked(2)
+        with patch.object(account_move, "CRON_TIME_BUDGET", -1):
+            self.run_cron()
+        self.assertFalse(self.fake.calls)
+        self.assertFalse(any(moves.mapped("l10n_py_sifende_ultima_consulta")))
+
+    def test_el_cron_no_espera_el_kude(self):
+        (move,) = self.make_tracked(1)
+        self.route_status(move, "APROBADO")
+        self.fake.add(
+            "GET",
+            rf"/documento-electronico/{move.l10n_py_cdc}/xml$",
+            FakeResponse(200, content=XML, headers={"Content-Type": "application/xml"}),
+        )
+        self.fake.add(
+            "GET",
+            rf"/documento-electronico/{move.l10n_py_cdc}/kude$",
+            FakeResponse(202, headers={"Retry-After": "5"}),
+        )
+        self.run_cron()
+        self.sleep.assert_not_called()
+        self.assertTrue(move.l10n_py_sifende_archivos_pendientes)
+
+    # === Cancelaciones ===
+
+    def accepted_with_files(self, **vals):
+        (move,) = self.make_tracked(1, status="accepted", **vals)
+        move.write({"l10n_py_edi_xml": "WE1M", "l10n_py_kude_pdf": "UERG"})
+        return move
+
+    def test_el_cron_respalda_un_aviso_de_cancelacion_perdido(self):
+        move = self.accepted_with_files()
+        self.route_status(move, "CANCELADO")
+        self.run_cron()
+        self.assertEqual(move.l10n_py_edi_status, "cancelled")
+
+    def test_un_documento_aceptado_se_consulta_una_vez_por_hora(self):
+        move = self.accepted_with_files()
+        self.route_status(move, "APROBADO")
+        self.run_cron()
+        self.run_cron()
+        self.assertEqual(len(self.queried()), 1)
+        self.assertEqual(move.l10n_py_edi_status, "accepted")
+        move.l10n_py_sifende_ultima_consulta = fields.Datetime.now() - timedelta(
+            hours=2
+        )
+        self.run_cron()
+        self.assertEqual(len(self.queried()), 2)
+
+    def test_un_documento_aceptado_fuera_del_plazo_de_cancelacion_no_se_consulta(self):
+        self.accepted_with_files(days_ago=30)
+        self.run_cron()
+        self.assertFalse(self.fake.calls)
+
+    def test_un_documento_cancelado_o_rechazado_no_se_consulta(self):
+        for status in ("cancelled", "rejected", "error"):
+            self.make_tracked(1, status=status)
+        self.run_cron()
+        self.assertFalse(self.fake.calls)
+
+    def test_la_aprobacion_y_los_archivos_siguen_funcionando(self):
+        (move,) = self.make_tracked(1)
+        self.route_status(move, "APROBADO")
+        self.route_files(move)
+        self.run_cron()
+        self.assertEqual(move.l10n_py_edi_status, "accepted")
+        self.assertTrue(move.l10n_py_kude_pdf)
+        self.assertFalse(move.l10n_py_sifende_archivos_pendientes)
