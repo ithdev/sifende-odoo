@@ -13,7 +13,7 @@ from odoo.addons.l10n_py_edi_sifende.models import edi_connector
 FIXTURES = Path(__file__).parent / "fixtures"
 API_KEY = "sk_test_clave-ficticia"
 CDC = "01800123451001001000000122026042710000000006"
-STAMP = "12345678"
+STAMP = "24681357"
 FIXED_DATE = date(2026, 10, 20)
 SECURITY_CODE = "123456789"
 QR_URL = "https://ekuatia.set.gov.py/consultas-test/qr?nVersion=150&Id=" + CDC
@@ -263,6 +263,10 @@ class SifendeCommon(TransactionCase):
             "af": "l10n_py_account.dc_py_af",
         }
         cls.doc_types, cls.auths, cls.journals = {}, {}, {}
+        # Demo data ships its own timbrados; Probar conexión would compare them too.
+        cls.env["account.authorization"].search(
+            [("company_id", "=", cls.company.id)]
+        ).active = False
         for key, xmlid in doc_types.items():
             cls.doc_types[key] = cls.env.ref(xmlid)
             cls.auths[key] = cls.env["account.authorization"].create(
