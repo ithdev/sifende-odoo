@@ -145,6 +145,35 @@ class TestCron(SifendeCommon):
         self.run_cron()
         self.assertFalse(self.fake.calls)
 
+    def test_un_error_de_sifende_se_consulta_una_vez_por_hora(self):
+        (move,) = self.make_tracked(
+            1, status="error", l10n_py_sifende_envio_fallido=True
+        )
+        self.route_status(move, "ERROR")
+        self.run_cron()
+        self.run_cron()
+        self.assertEqual(len(self.queried()), 1)
+        self.assertEqual(move.l10n_py_edi_status, "error")
+        move.l10n_py_sifende_ultima_consulta = fields.Datetime.now() - timedelta(
+            hours=2
+        )
+        self.route_status(move, "EN_LOTE")
+        self.run_cron()
+        self.assertEqual(len(self.queried()), 2)
+        self.assertEqual(move.l10n_py_edi_status, "processing")
+        self.assertFalse(move.l10n_py_sifende_envio_fallido)
+
+    def test_un_error_de_sifende_aprobado_despues_queda_aceptado(self):
+        (move,) = self.make_tracked(
+            1, status="error", l10n_py_sifende_envio_fallido=True
+        )
+        self.route_status(move, "APROBADO")
+        self.route_files(move)
+        self.run_cron()
+        self.assertEqual(move.l10n_py_edi_status, "accepted")
+        self.assertFalse(move.l10n_py_sifende_envio_fallido)
+        self.assertTrue(move.l10n_py_kude_pdf)
+
     def test_un_documento_cancelado_o_rechazado_no_se_consulta(self):
         for status in ("cancelled", "rejected", "error"):
             self.make_tracked(1, status=status)

@@ -461,11 +461,17 @@ adjuntos, o <em>Rechazado</em> con los mensajes de SIFEN en el campo
 <em>Mensaje EDI</em>. Si el webhook está registrado, Sifende avisa a Odoo en
 cuanto SIFEN responde; si no, o si el aviso se pierde, lo hace el
 cron «Sifende: verificar estado de documentos» (cada 5 minutos).</li>
-<li>Si el documento queda con <em>Error</em>, o <em>Rechazado</em> antes de llegar a
-SIFEN (por ejemplo por un campo obligatorio), corrija el dato y pulse
-<strong>Reintentar</strong>. Un reintento tras una corrección usa una clave de
-idempotencia nueva. Si el fallo fue de conexión, se reintenta con la
-misma clave y no se duplica el documento.</li>
+<li>Si el documento queda con <em>Rechazado</em> antes de llegar a SIFEN (por
+ejemplo por un campo obligatorio), corrija el dato y pulse
+<strong>Reintentar</strong>: usa una clave de idempotencia nueva. Si queda con
+<em>Error</em> por un fallo de conexión o de Sifende antes de registrar el
+documento (el mensaje lo indica), <strong>Reintentar</strong> usa la misma clave y
+no se duplica. Si el <em>Error</em> es un fallo definitivo del envío a
+SIFEN, el documento ya tiene CDC y número tomados: <strong>Reintentar</strong> no
+lo reemite y muestra el procedimiento. Reintente el lote desde el
+panel de Sifende o pídalo a soporte; Odoo consulta el documento cada
+hora y lo actualiza solo (<em>Procesando</em> y luego <em>Aceptado</em>) cuando
+vuelve a procesarse con el mismo CDC.</li>
 <li>En una nota de crédito o de débito, elija el <em>Motivo de emisión</em> en
 la pestaña <em>Facturación electrónica</em>. En una nota de remisión,
 indique también el responsable de la emisión y los kilómetros del

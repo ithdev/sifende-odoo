@@ -1,4 +1,5 @@
 import base64
+from datetime import timedelta
 
 import requests
 
@@ -303,15 +304,59 @@ class TestEdiFlow(SifendeCommon):
         self.assertEqual(move.l10n_py_sifende_intento, 0)
         self.assertEqual(len(self.fake.calls_to("POST", "^/documento-electronico$")), 1)
 
-    def test_un_error_de_sifende_sigue_pudiendo_reintentarse(self):
+    def failed_move(self):
         move = self.sent_move()
         self.route_status(self.status_response("ERROR"))
         self.run_cron()
         self.assertEqual(move.l10n_py_edi_status, "error")
-        self.route_emission(self.emission_response())
+        return move
+
+    def test_un_error_de_sifende_no_se_reemite_y_guia_al_panel(self):
+        move = self.failed_move()
+        self.assertTrue(move.l10n_py_sifende_envio_fallido)
+        self.assertIn("panel de Sifende", move.l10n_py_edi_message)
+        self.assertIn("mismo CDC", move.l10n_py_edi_message)
+
+        for action in (move.action_retry_edi, move.action_send_edi):
+            with self.assertRaisesRegex(UserError, "panel de Sifende"):
+                action()
+        self.assertEqual(move.l10n_py_sifende_intento, 0)
+        self.assertEqual(move.l10n_py_edi_status, "error")
+        self.assertEqual(len(self.fake.calls_to("POST", "^/documento-electronico$")), 1)
+
+    def test_un_error_de_sifende_se_recupera_cuando_el_lote_se_reintenta(self):
+        move = self.failed_move()
+        move.l10n_py_sifende_ultima_consulta = fields.Datetime.now() - timedelta(
+            hours=2
+        )
+        self.route_status(self.status_response("EN_LOTE"))
+        self.run_cron()
+        self.assertEqual(move.l10n_py_edi_status, "processing")
+        self.assertFalse(move.l10n_py_sifende_envio_fallido)
+
+        self.route_status(self.status_response("APROBADO"))
+        self.route_files()
+        self.run_cron()
+        self.assertEqual(move.l10n_py_edi_status, "accepted")
+        self.assertFalse(move.l10n_py_sifende_envio_fallido)
+
+    def test_el_error_transitorio_se_reintenta_con_la_misma_clave(self):
+        move = self.make_move("fe")
+        self.route_emission(
+            *[problem("internal-error", 500)] * 3, self.emission_response()
+        )
+        move.action_send_edi()
+        self.assertEqual(move.l10n_py_edi_status, "error")
+        self.assertFalse(move.l10n_py_sifende_envio_fallido)
 
         move.action_retry_edi()
         self.assertEqual(move.l10n_py_edi_status, "processing")
+        self.assertEqual(move.l10n_py_sifende_intento, 0)
+        keys = {
+            c.headers["Idempotency-Key"]
+            for c in self.fake.calls_to("POST", "^/documento-electronico$")
+        }
+        self.assertEqual(len(keys), 1)
 
     # === Errores del envío ===
 
