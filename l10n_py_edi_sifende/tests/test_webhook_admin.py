@@ -152,13 +152,16 @@ class TestWebhookAdmin(SifendeCommon):
         with self.assertRaisesRegex(UserError, "no tiene un webhook"):
             self.connector.action_sifende_rotate_webhook_secret()
 
-    def test_rotar_un_webhook_inexistente_limpia_el_conector(self):
+    def test_rotar_un_webhook_inexistente_limpia_el_conector_sin_excepcion(self):
         self.registered()
         self.fake.add(
             "POST", r"/rotar$", problem("webhook-not-found", 404, "No existe")
         )
-        with self.assertRaisesRegex(UserError, "ya no existe"):
+        params = self.notification(
             self.connector.action_sifende_rotate_webhook_secret()
+        )
+        self.assertEqual(params["type"], "warning")
+        self.assertIn("ya no existe", params["message"])
         self.assertFalse(self.connector.sifende_webhook_id)
         self.assertFalse(self.connector.sifende_webhook_secret)
 

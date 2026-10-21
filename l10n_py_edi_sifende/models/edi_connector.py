@@ -616,8 +616,11 @@ class EDIConnector(models.Model):
         webhook_id = self._sifende_require_webhook_id()
         response = self._sifende_webhook_call("POST", f"/{webhook_id}/rotar")
         if response.status_code == 404:
+            # sin excepción: el rollback del RPC deshacería la limpieza
             self._sifende_forget_webhook()
-            raise UserError(self._sifende_webhook_missing_message())
+            return self._sifende_notify(
+                self._sifende_webhook_missing_message(), "warning"
+            )
         if not (response.ok and isinstance(response.body, dict)):
             raise UserError(self._sifende_failure_message(response))
         self._sifende_store_webhook(response.body)
