@@ -37,6 +37,9 @@ WEBHOOK_STATES = {
 class AccountMove(models.Model):
     _inherit = "account.move"
 
+    l10n_py_authorization_id = fields.Many2one(
+        compute="_compute_l10n_py_authorization_id", store=True, readonly=False
+    )
     l10n_py_sifende_intento = fields.Integer(
         string="Intento de envío a Sifende",
         default=0,
@@ -97,6 +100,77 @@ class AccountMove(models.Model):
                 move.l10n_py_sifende_motivo_emision = "8"
             else:
                 move.l10n_py_sifende_motivo_emision = False
+
+    # === Timbrado y documento asociado por defecto ===
+
+    def _l10n_py_sifende_uses_documents(self):
+        self.ensure_one()
+        return bool(
+            self.move_type in ("out_invoice", "out_refund")
+            and self.company_id.country_id.code == "PY"
+            and self.journal_id.l10n_latam_use_documents
+            and self.l10n_latam_document_type_id
+        )
+
+    def _l10n_py_sifende_default_authorization(self):
+        """Timbrado del diario para el tipo de documento: uno por tipo, mismo número."""
+        self.ensure_one()
+        base = self.journal_id.l10n_py_authorization_id
+        if not (base and self._l10n_py_sifende_uses_documents()):
+            return base.browse()
+        candidates = self.env["account.authorization"].search(
+            [
+                ("company_id", "=", self.company_id.id),
+                ("active", "=", True),
+                ("state", "!=", "expired"),
+                ("name", "=", base.name),
+                ("establishment", "=", self.journal_id.l10n_py_establishment),
+                ("expedition_point", "=", self.journal_id.l10n_py_point),
+                (
+                    "l10n_latam_document_type_id",
+                    "=",
+                    self.l10n_latam_document_type_id.id,
+                ),
+            ]
+        )
+        return base if base in candidates else candidates[:1]
+
+    @api.depends("journal_id", "l10n_latam_document_type_id")
+    def _compute_l10n_py_authorization_id(self):
+        for move in self:
+            current = move.l10n_py_authorization_id
+            doc_type = move.l10n_latam_document_type_id
+            if move.state == "draft" and not (
+                current and current.l10n_latam_document_type_id == doc_type
+            ):
+                current = move._l10n_py_sifende_default_authorization()
+            move.l10n_py_authorization_id = current
+
+    def action_post(self):
+        res = super().action_post()
+        self._l10n_py_sifende_link_origin_document()
+        return res
+
+    def _l10n_py_sifende_origin(self):
+        self.ensure_one()
+        code = self.l10n_latam_document_type_id.code
+        if code == DOC_CREDIT_NOTE:
+            return self.reversed_entry_id
+        if code == DOC_DEBIT_NOTE and "debit_origin_id" in self._fields:
+            return self.debit_origin_id
+        return self.browse()
+
+    def _l10n_py_sifende_link_origin_document(self):
+        for move in self:
+            origin = move._l10n_py_sifende_origin()
+            if origin.l10n_py_cdc and not move.l10n_py_associated_document_ids:
+                self.env["l10n_py.associated.document"].sudo().create(
+                    {
+                        "move_id": move.id,
+                        "association_type": "1",
+                        "cdc": origin.l10n_py_cdc,
+                    }
+                )
 
     def _l10n_py_sifende_connector(self):
         self.ensure_one()
@@ -267,11 +341,16 @@ class AccountMove(models.Model):
             and self._l10n_py_sifende_is_cash()
         ):
             errors.extend(self._l10n_py_sifende_cheque_errors())
-        if (
-            code in (DOC_CREDIT_NOTE, DOC_DEBIT_NOTE)
-            and not self.l10n_py_sifende_motivo_emision
-        ):
-            errors.append(self.env._("Indique el motivo de emisión de la nota."))
+        if code in (DOC_CREDIT_NOTE, DOC_DEBIT_NOTE):
+            if not self.l10n_py_sifende_motivo_emision:
+                errors.append(self.env._("Indique el motivo de emisión de la nota."))
+            if not self.l10n_py_associated_document_ids:
+                errors.append(
+                    self.env._(
+                        "Indique el documento asociado (Grupo H) de la nota: no hay "
+                        "una factura de origen con CDC de la que tomarlo."
+                    )
+                )
         if code == DOC_DELIVERY_NOTE:
             if self.l10n_py_sifende_km_recorrido < 1:
                 errors.append(
@@ -324,6 +403,7 @@ class AccountMove(models.Model):
         connector._sifende_check_environment()
         if self._l10n_py_sifende_is_failed():
             raise UserError(self._l10n_py_sifende_failed_steps())
+        self._l10n_py_sifende_link_origin_document()
         self._validate_edi_data()
         document_data = self._prepare_edi_document_data()
         self.l10n_py_edi_status = "sent"
