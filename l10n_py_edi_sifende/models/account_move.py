@@ -180,14 +180,13 @@ class AccountMove(models.Model):
 
     def _l10n_py_sifende_is_cash(self):
         self.ensure_one()
-        due_dates = self._l10n_py_sifende_due_dates()
+        due_dates = [due for due, _amount in self._l10n_py_sifende_installments()]
         return not due_dates or due_dates == [self.invoice_date]
 
     def _prepare_payment_condition(self):
         if not self._l10n_py_sifende_connector():
             return super()._prepare_payment_condition()
         self.ensure_one()
-        due_dates = self._l10n_py_sifende_due_dates()
         if self._l10n_py_sifende_is_cash():
             payment = {
                 "tipo": int(self.l10n_py_payment_type or "1"),
@@ -201,30 +200,40 @@ class AccountMove(models.Model):
                     "bancoCheque": self.l10n_py_sifende_cheque_banco,
                 }
             return {"tipo": 1, "entregas": [payment]}
-        term_days = (due_dates[0] - self.invoice_date).days
+        installments = self._l10n_py_sifende_installments()
+        term_days = (installments[0][0] - self.invoice_date).days
         return {
             "tipo": 2,
             "credito": {
                 "tipo": 1,
                 "plazo": f"{term_days} días",
-                "cuotas": len(due_dates),
+                "cuotas": len(installments),
                 "infoCuotas": [
                     {
                         "moneda": self.currency_id.name,
-                        "monto": self.amount_total / len(due_dates),
+                        "monto": amount,
                         "vencimiento": due.strftime("%Y-%m-%d"),
                     }
-                    for due in due_dates
+                    for due, amount in installments
                 ],
             },
         }
 
-    def _l10n_py_sifende_due_dates(self):
+    def _l10n_py_sifende_installments(self):
+        """Vencimientos y montos que Odoo calculó para las cuentas por cobrar."""
         self.ensure_one()
         if not self.invoice_payment_term_id:
             return []
-        lines = self.line_ids.filtered(lambda line: line.display_type == "payment_term")
-        return sorted({line.date_maturity for line in lines if line.date_maturity})
+        amounts = {}
+        for line in self.line_ids:
+            if line.display_type == "payment_term" and line.date_maturity:
+                amounts[line.date_maturity] = (
+                    amounts.get(line.date_maturity, 0.0) + line.amount_currency
+                )
+        return [
+            (due, self.currency_id.round(amount))
+            for due, amount in sorted(amounts.items())
+        ]
 
     def _validate_edi_document_type(self):
         errors = super()._validate_edi_document_type()
