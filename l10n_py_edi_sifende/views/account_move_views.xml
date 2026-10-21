@@ -12,6 +12,7 @@
         <field name="inherit_id" ref="l10n_py_edi_base.view_move_form_edi" />
         <field name="arch" type="xml">
             <xpath expr="//field[@name='l10n_py_security_code']" position="after">
+                <field name="l10n_py_sifende_numero_ocupado" invisible="1" />
                 <field
                     name="l10n_py_sifende_motivo_emision"
                     invisible="l10n_py_doc_type_code not in ['5', '6']"
@@ -32,7 +33,17 @@
             <xpath expr="//button[@name='action_retry_edi']" position="attributes">
                 <attribute
                     name="invisible"
-                >state != 'posted' or l10n_py_edi_status not in ['error', 'rejected']</attribute>
+                >state != 'posted' or l10n_py_sifende_numero_ocupado or l10n_py_edi_status not in ['error', 'rejected']</attribute>
+            </xpath>
+            <xpath expr="//button[@name='action_retry_edi']" position="after">
+                <button
+                    name="action_l10n_py_sifende_renumber"
+                    string="Renumerar"
+                    type="object"
+                    groups="account.group_account_invoice"
+                    invisible="state != 'posted' or not l10n_py_sifende_numero_ocupado"
+                    confirm="Sifende ya tiene ese número. El documento tomará el siguiente número libre del timbrado y deberá enviarlo de nuevo. ¿Renumerarlo?"
+                />
             </xpath>
             <xpath expr="//field[@name='l10n_py_payment_type']" position="after">
                 <field

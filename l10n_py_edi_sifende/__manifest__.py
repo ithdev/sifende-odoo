@@ -14,6 +14,7 @@
         "data/ir_cron_data.xml",
         "views/edi_connector_views.xml",
         "views/account_move_views.xml",
+        "views/account_authorization_views.xml",
         "views/l10n_py_number_inutilization_views.xml",
         "views/uom_uom_views.xml",
     ],
