@@ -41,6 +41,11 @@ class TestConnector(SifendeCommon):
         self.assertEqual(action["tag"], "display_notification")
         return action["params"]
 
+    def test_las_etiquetas_del_conector_estan_en_espanol(self):
+        fields = self.connector._fields
+        self.assertEqual(fields["company_id"].string, "Empresa")
+        self.assertEqual(fields["environment"].string, "Ambiente")
+
     def test_test_connection_correcta(self):
         self.route_taxpayer(taxpayer())
         params = self.message(self.connector.test_connection())

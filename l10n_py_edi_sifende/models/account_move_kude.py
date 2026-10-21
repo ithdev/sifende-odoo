@@ -120,6 +120,8 @@ class AccountMove(models.Model):
         )
         if attachment and attachment.name == attachment.res_field:
             attachment.name = self.l10n_py_edi_xml_filename or f"{self.l10n_py_cdc}.xml"
+        if attachment and attachment.mimetype != "application/xml":
+            attachment.mimetype = "application/xml"
         return attachment
 
     def _l10n_py_sifende_prepare_send(self):

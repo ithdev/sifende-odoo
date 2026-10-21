@@ -81,6 +81,7 @@ class AccountMove(models.Model):
     )
     l10n_py_receipt_id = fields.Char(string="ID de recibo")
     l10n_py_sifende_enabled = fields.Boolean(compute="_compute_l10n_py_sifende_enabled")
+    l10n_py_sifende_sandbox = fields.Boolean(compute="_compute_l10n_py_sifende_sandbox")
     l10n_py_sifende_intento = fields.Integer(
         string="Intento de envío a Sifende",
         default=0,
@@ -147,6 +148,13 @@ class AccountMove(models.Model):
     def _compute_l10n_py_sifende_enabled(self):
         for move in self:
             move.l10n_py_sifende_enabled = bool(move._l10n_py_sifende_connector())
+
+    def _compute_l10n_py_sifende_sandbox(self):
+        for move in self:
+            connector = move._l10n_py_sifende_connector()
+            move.l10n_py_sifende_sandbox = bool(
+                connector and connector._sifende_is_sandbox()
+            )
 
     @api.depends("reversed_entry_id", "l10n_latam_document_type_id")
     def _compute_l10n_py_sifende_motivo_emision(self):
@@ -684,6 +692,13 @@ class AccountMove(models.Model):
         if connector:
             self.check_access("write")
             connector._sifende_check_environment()
+            if connector._sifende_is_sandbox():
+                raise UserError(
+                    self.env._(
+                        "La cancelación no está disponible en SANDBOX: Sifende solo "
+                        "cancela documentos emitidos en producción."
+                    )
+                )
         return super().action_cancel_edi()
 
     def action_retry_edi(self):
@@ -751,9 +766,11 @@ class AccountMove(models.Model):
                 "l10n_py_kude_filename": f"KUDE_{self.l10n_py_cdc}.pdf",
             }
         )
-        self._l10n_py_sifende_attach(f"KUDE_{self.l10n_py_cdc}.pdf", pdf)
+        self._l10n_py_sifende_attach(
+            f"KUDE_{self.l10n_py_cdc}.pdf", pdf, "application/pdf"
+        )
 
-    def _l10n_py_sifende_attach(self, name, content):
+    def _l10n_py_sifende_attach(self, name, content, mimetype):
         # los binarios de OCA no salen en el chatter: se adjuntan también como archivos
         self.ensure_one()
         attachments = self.env["ir.attachment"].sudo()
@@ -768,6 +785,7 @@ class AccountMove(models.Model):
                 {
                     "name": name,
                     "raw": content,
+                    "mimetype": mimetype,
                     "res_model": "account.move",
                     "res_id": self.id,
                 }
@@ -941,7 +959,9 @@ class AccountMove(models.Model):
                         "l10n_py_edi_xml_filename": f"{self.l10n_py_cdc}.xml",
                     }
                 )
-                self._l10n_py_sifende_attach(f"{self.l10n_py_cdc}.xml", xml)
+                self._l10n_py_sifende_attach(
+                    f"{self.l10n_py_cdc}.xml", xml, "application/xml"
+                )
             except (UserError, SifendeTransportError) as e:
                 pending = True
                 _logger.info("XML de %s pendiente: %s", self.l10n_py_cdc, e)

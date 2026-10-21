@@ -34,7 +34,8 @@
    «Cancelar documento electrónico», donde se escribe el motivo (se envía a SIFEN) y se
    confirma con **Cancelar Documento**. Hace falta el rol *Contabilidad > Facturación* y
    estar dentro del plazo que valida Odoo (48 horas las facturas y autofacturas, 7 días las
-   notas).
+   notas). En SANDBOX Sifende no admite cancelaciones: el botón no aparece y Odoo avisa si
+   se intenta por otra vía.
 8. Con el documento *Aceptado*, **Imprimir** (el botón y los reportes del menú) entrega el KuDE
    que genera Sifende, con el CDC y el QR, en lugar del PDF estándar de Odoo. **Enviar** manda
    por correo el KuDE, tal como lo entregó Sifende, y el XML firmado (si todavía no están
