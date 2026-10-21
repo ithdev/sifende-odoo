@@ -24,6 +24,16 @@
                 <attribute name="type">action</attribute>
                 <attribute name="groups">account.group_account_invoice</attribute>
             </xpath>
+            <xpath expr="//button[@name='action_send_edi']" position="attributes">
+                <attribute
+                    name="invisible"
+                >state != 'posted' or l10n_py_edi_status in ['sent', 'accepted', 'processing']</attribute>
+            </xpath>
+            <xpath expr="//button[@name='action_retry_edi']" position="attributes">
+                <attribute
+                    name="invisible"
+                >state != 'posted' or l10n_py_edi_status not in ['error', 'rejected']</attribute>
+            </xpath>
             <xpath expr="//field[@name='l10n_py_payment_type']" position="after">
                 <field
                     name="l10n_py_sifende_cheque_numero"
