@@ -8,7 +8,7 @@ from odoo.exceptions import UserError
 from odoo.tests import tagged
 from odoo.tools import mute_logger
 
-from .common import API_KEY, CDC, QR_URL, FakeResponse, SifendeCommon, problem
+from .common import API_KEY, CDC, QR_URL, STAMP, FakeResponse, SifendeCommon, problem
 
 XML = b'<?xml version="1.0"?><rDE><DE Id="' + CDC.encode() + b'"/></rDE>'
 PDF = b"%PDF-1.4 kude"
@@ -503,7 +503,7 @@ class TestEdiFlow(SifendeCommon):
         self.assertEqual(
             self.fake.calls_to("POST", "/inutilizar$")[0].json,
             {
-                "numeroTimbrado": 12345678,
+                "numeroTimbrado": int(STAMP),
                 "establecimiento": "001",
                 "puntoExpedicion": "001",
                 "numeroInicio": "0000005",
