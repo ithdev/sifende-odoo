@@ -4,6 +4,7 @@ from unittest.mock import patch
 from odoo.exceptions import UserError
 from odoo.tests import tagged
 
+from odoo.addons.account.models.account_move_send import AccountMoveSend
 from odoo.addons.base.models.ir_actions_report import IrActionsReport
 
 from .common import CDC, FakeResponse, SifendeCommon
@@ -186,6 +187,21 @@ class TestKudeEnviar(KudeCommon):
         )
         self.assertEqual(move.invoice_pdf_report_id.name, f"KUDE_{CDC}.pdf")
         self.assertTrue(move.is_move_sent)
+
+    def test_enviar_adjunta_el_kude_sin_el_factur_x_que_incrusta_odoo(self):
+        def embed(_self, invoice, invoice_data):
+            invoice_data["pdf_attachment_values"]["raw"] += b"/factur-x.xml"
+
+        move = self.accepted_move()
+        with patch.object(
+            AccountMoveSend, "_hook_invoice_document_after_pdf_report_render", embed
+        ):
+            self.send(move)
+        self.assertEqual(move.invoice_pdf_report_id.raw, PDF)
+        self.assertEqual(
+            {a.name: a.raw for a in self.sent_attachments(move)},
+            {f"KUDE_{CDC}.pdf": PDF, f"{CDC}.xml": XML},
+        )
 
     def test_enviar_dos_veces_no_duplica_los_adjuntos_del_documento(self):
         move = self.accepted_move()
