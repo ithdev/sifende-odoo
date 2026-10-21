@@ -243,6 +243,8 @@ class AccountMove(models.Model):
         if not self._l10n_py_sifende_connector():
             return errors
         code = self.l10n_latam_document_type_id.code
+        if not self.invoice_date:
+            errors.append(self.env._("Indique la fecha de la factura."))
         if not (self.journal_id.l10n_py_authorization_id.name or "").strip().isdigit():
             errors.append(
                 self.env._("El número de timbrado debe ser numérico para Sifende.")
@@ -291,11 +293,22 @@ class AccountMove(models.Model):
 
     # === Envío y respuesta ===
 
+    def _l10n_py_sifende_check_posted(self):
+        self.ensure_one()
+        if self.state != "posted":
+            raise UserError(
+                self.env._(
+                    "Confirme la factura antes de enviarla a SIFENDE: solo se emiten "
+                    "documentos publicados."
+                )
+            )
+
     def action_send_edi(self):
         self.ensure_one()
         connector = self._l10n_py_sifende_connector()
         if not connector:
             return super().action_send_edi()
+        self._l10n_py_sifende_check_posted()
         if self._l10n_py_sifende_is_failed():
             raise UserError(self._l10n_py_sifende_failed_steps())
         self._validate_edi_data()
@@ -349,6 +362,7 @@ class AccountMove(models.Model):
     def action_retry_edi(self):
         self.ensure_one()
         if self._l10n_py_sifende_connector():
+            self._l10n_py_sifende_check_posted()
             if self.l10n_py_edi_status == "rejected" and self.l10n_py_cdc:
                 raise UserError(self._l10n_py_sifende_rejection_steps())
             if self._l10n_py_sifende_is_failed():
