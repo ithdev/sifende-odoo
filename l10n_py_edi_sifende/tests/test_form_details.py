@@ -227,11 +227,13 @@ class TestAttachments(SifendeCommon):
         self.assertEqual(set(files), {f"{CDC}.xml", f"KUDE_{CDC}.pdf"})
         self.assertEqual(files[f"{CDC}.xml"].raw, XML)
         self.assertEqual(files[f"KUDE_{CDC}.pdf"].raw, PDF)
+        self.assertEqual(files[f"{CDC}.xml"].mimetype, "application/xml")
+        self.assertEqual(files[f"KUDE_{CDC}.pdf"].mimetype, "application/pdf")
         self.assertEqual(base64.b64decode(move.l10n_py_edi_xml), XML)
 
     def test_los_adjuntos_no_se_duplican(self):
         move = self.accepted()
-        move._l10n_py_sifende_attach(f"{CDC}.xml", XML)
+        move._l10n_py_sifende_attach(f"{CDC}.xml", XML, "application/xml")
         move.l10n_py_kude_pdf = False
         move._generate_kude()
         self.assertEqual(len(self.attachments(move)), 2)

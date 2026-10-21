@@ -1,6 +1,6 @@
 from lxml import etree
 
-from odoo.exceptions import ValidationError
+from odoo.exceptions import UserError, ValidationError
 from odoo.tests import tagged
 
 from .common import CDC, FakeResponse, SifendeCommon
@@ -83,6 +83,27 @@ class TestProcedures(SifendeCommon):
             self.fake.calls_to("POST", "/cancelar$")[0].json,
             {"motivo": "Error en el monto facturado"},
         )
+
+    def test_en_sandbox_el_boton_cancelar_edi_se_oculta(self):
+        move = self.accepted_move()
+        self.assertFalse(move.l10n_py_sifende_sandbox)
+        self.connector.sifende_api_key = "sk_sandbox_clave-ficticia"
+        move.invalidate_recordset()
+        self.assertTrue(move.l10n_py_sifende_sandbox)
+        self.assertIn("l10n_py_sifende_sandbox", self.cancel_button().get("invisible"))
+
+    def test_el_ambiente_sandbox_que_informa_sifende_tambien_cuenta(self):
+        move = self.accepted_move()
+        self.connector.sifende_ambiente = "SANDBOX"
+        self.assertTrue(move.l10n_py_sifende_sandbox)
+
+    def test_cancelar_en_sandbox_avisa_sin_llamar_a_sifende(self):
+        move = self.accepted_move()
+        self.connector.sifende_api_key = "sk_sandbox_clave-ficticia"
+        with self.assertRaisesRegex(UserError, "SANDBOX"):
+            move.action_cancel_edi()
+        self.assertFalse(self.fake.calls_to("POST", ".*"))
+        self.assertEqual(move.l10n_py_edi_status, "accepted")
 
     # === Inutilización ===
 

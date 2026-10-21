@@ -44,9 +44,10 @@ READ_GROUPS = (GROUP_READONLY, GROUP_BILLING)
 
 SOFT_RELOAD = {"type": "ir.actions.client", "tag": "soft_reload"}
 
+SANDBOX_KEY_PREFIX = "sk_sandbox_"
 KEY_PREFIX_ENVIRONMENTS = {
     "sk_live_": "prod",
-    "sk_sandbox_": "test",
+    SANDBOX_KEY_PREFIX: "test",
     "sk_test_": "test",
 }
 
@@ -115,6 +116,7 @@ class EDIConnector(models.Model):
         selection_add=[("sifende", "Sifende")],
         ondelete={"sifende": "cascade"},
     )
+    company_id = fields.Many2one(string="Empresa")
     environment = fields.Selection(string="Ambiente")
     timeout = fields.Integer(string="Tiempo de espera (segundos)")
     active = fields.Boolean(string="Activo")
@@ -182,6 +184,13 @@ class EDIConnector(models.Model):
             if key.startswith(prefix):
                 return environment
         return None
+
+    def _sifende_is_sandbox(self):
+        self.ensure_one()
+        connector = self.sudo()
+        return connector.sifende_ambiente == "SANDBOX" or (
+            connector.sifende_api_key or ""
+        ).startswith(SANDBOX_KEY_PREFIX)
 
     def _sifende_check_environment(self, error=UserError):
         self.ensure_one()

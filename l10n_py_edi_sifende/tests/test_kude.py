@@ -187,6 +187,16 @@ class TestKudeEnviar(KudeCommon):
         )
         self.assertEqual(move.invoice_pdf_report_id.name, f"KUDE_{CDC}.pdf")
         self.assertTrue(move.is_move_sent)
+        self.assertEqual(
+            {a.name: a.mimetype for a in attachments},
+            {f"KUDE_{CDC}.pdf": "application/pdf", f"{CDC}.xml": "application/xml"},
+        )
+
+    def test_el_xml_firmado_del_documento_es_application_xml(self):
+        move = self.accepted_move()
+        attachment = move._l10n_py_sifende_xml_attachment()
+        self.assertEqual(attachment.name, f"{CDC}.xml")
+        self.assertEqual(attachment.mimetype, "application/xml")
 
     def test_enviar_adjunta_el_kude_sin_el_factur_x_que_incrusta_odoo(self):
         def embed(_self, invoice, invoice_data):
