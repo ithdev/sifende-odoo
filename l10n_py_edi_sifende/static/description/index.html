@@ -461,10 +461,11 @@ adjuntos, o <em>Rechazado</em> con los mensajes de SIFEN en el campo
 <em>Mensaje EDI</em>. Si el webhook está registrado, Sifende avisa a Odoo en
 cuanto SIFEN responde; si no, o si el aviso se pierde, lo hace el
 cron «Sifende: verificar estado de documentos» (cada 5 minutos).</li>
-<li>Si el documento queda <em>Rechazado</em> o con <em>Error</em>, corrija el dato y
-pulse <strong>Reintentar</strong>. Un reintento tras una corrección usa una clave
-de idempotencia nueva. Si el fallo fue de conexión, se reintenta con
-la misma clave y no se duplica el documento.</li>
+<li>Si el documento queda con <em>Error</em>, o <em>Rechazado</em> antes de llegar a
+SIFEN (por ejemplo por un campo obligatorio), corrija el dato y pulse
+<strong>Reintentar</strong>. Un reintento tras una corrección usa una clave de
+idempotencia nueva. Si el fallo fue de conexión, se reintenta con la
+misma clave y no se duplica el documento.</li>
 <li>En una nota de crédito o de débito, elija el <em>Motivo de emisión</em> en
 la pestaña <em>Facturación electrónica</em>. En una nota de remisión,
 indique también el responsable de la emisión y los kilómetros del
@@ -473,15 +474,17 @@ recorrido.</li>
 pestaña <em>Facturación electrónica</em>), complete el número del cheque
 (solo dígitos, hasta 8) y el banco (de 4 a 20 caracteres): Sifende
 los exige.</li>
-<li>Si SIFEN rechazó un documento y se cambió la fecha o el código de
-seguridad, Sifende no permite reutilizar ese número. Con el rol
-<em>Contabilidad &gt; Administrador</em>, abra <em>Facturación Electrónica &gt;
-Inutilización de números</em> (dentro de la aplicación de Facturación o
-Contabilidad), cree la inutilización con el timbrado y el número del
-documento rechazado, y pulse <strong>Enviar al SIFEN</strong>. Luego pulse
-<strong>Restablecer a borrador</strong> y <strong>Cancelar</strong> en el documento rechazado y
-emita uno nuevo, que recibe el número siguiente. Odoo solo permite
-inutilizar números sin documento o de documentos rechazados.</li>
+<li>Si SIFEN rechaza un documento ya enviado (<em>Rechazado</em> con el CDC
+cargado), Sifende no permite reenviar ese número ni con los mismos
+datos, y <strong>Reintentar</strong> muestra el procedimiento en lugar de enviar.
+Con el rol <em>Contabilidad &gt; Administrador</em>, abra <em>Facturación
+Electrónica &gt; Inutilización de números</em> (dentro de la aplicación de
+Facturación o Contabilidad), cree la inutilización con el timbrado y
+el número del documento rechazado, y pulse <strong>Enviar al SIFEN</strong>. Luego
+pulse <strong>Restablecer a borrador</strong> y <strong>Cancelar</strong> en el documento
+rechazado y emita uno nuevo, que recibe el número siguiente. Odoo
+solo permite inutilizar números sin documento o de documentos
+rechazados.</li>
 <li>Para cancelar un documento aceptado, pulse <strong>Cancelar EDI</strong>: se abre
 el asistente «Cancelar documento electrónico», donde se escribe el
 motivo (se envía a SIFEN) y se confirma con <strong>Cancelar Documento</strong>.

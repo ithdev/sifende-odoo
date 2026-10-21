@@ -287,6 +287,32 @@ class TestEdiFlow(SifendeCommon):
             keys, [f"odoo:{database}:{move.id}:0", f"odoo:{database}:{move.id}:1"]
         )
 
+    def test_un_rechazo_de_sifen_no_se_reintenta_y_guia_a_la_inutilizacion(self):
+        move = self.sent_move()
+        self.route_status(
+            self.status_response("RECHAZADO", mensajeRechazo="1001 - CDC duplicado")
+        )
+        self.run_cron()
+        self.assertEqual(move.l10n_py_edi_status, "rejected")
+        self.assertIn("1001 - CDC duplicado", move.l10n_py_edi_message)
+        self.assertIn("Inutilización de números", move.l10n_py_edi_message)
+        self.assertIn("Restablecer a borrador", move.l10n_py_edi_message)
+
+        with self.assertRaisesRegex(UserError, "no se puede reenviar"):
+            move.action_retry_edi()
+        self.assertEqual(move.l10n_py_sifende_intento, 0)
+        self.assertEqual(len(self.fake.calls_to("POST", "^/documento-electronico$")), 1)
+
+    def test_un_error_de_sifende_sigue_pudiendo_reintentarse(self):
+        move = self.sent_move()
+        self.route_status(self.status_response("ERROR"))
+        self.run_cron()
+        self.assertEqual(move.l10n_py_edi_status, "error")
+        self.route_emission(self.emission_response())
+
+        move.action_retry_edi()
+        self.assertEqual(move.l10n_py_edi_status, "processing")
+
     # === Errores del envío ===
 
     def test_numero_en_uso_informa_el_cdc_existente(self):
@@ -319,7 +345,7 @@ class TestEdiFlow(SifendeCommon):
         self.assertIn("timbrado", move.l10n_py_edi_message.lower())
         self.assertIn("87654321", move.l10n_py_edi_message)
 
-    def test_rechazado_que_cambio_requiere_inutilizar(self):
+    def test_numero_de_un_rechazado_requiere_inutilizar(self):
         move = self.make_move("fe")
         self.route_emission(problem("document-number-requires-voiding", 422))
         move.action_send_edi()
