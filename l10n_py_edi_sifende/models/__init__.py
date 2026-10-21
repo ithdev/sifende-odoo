@@ -6,3 +6,6 @@ from . import account_authorization
 from . import l10n_py_number_inutilization
 from . import uom_uom
 from . import l10n_py_sifende_webhook_event
+from . import account_move_kude
+from . import account_move_send
+from . import ir_actions_report

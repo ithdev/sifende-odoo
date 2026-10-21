@@ -458,19 +458,19 @@ base y el webhook son de <em>Ajustes</em>.</li>
 <ol class="arabic simple">
 <li>Confirme la factura y pulse <strong>Enviar a EDI</strong> (solo se envían
 documentos publicados). El documento pasa a <em>Procesando</em>. Una vez
-enviado, el tipo de pago, el cheque, la tarjeta, la condición de pago
-y los vencimientos ya no se pueden modificar.</li>
+enviado, el tipo de pago, el cheque, la tarjeta, la condición de
+pago y los vencimientos ya no se pueden modificar.</li>
 <li>El estado se actualiza solo: <em>Aceptado</em> con el XML y el KuDE
 adjuntos, o <em>Rechazado</em> con los mensajes de SIFEN en el campo
-<em>Mensaje EDI</em>. Si el webhook está registrado, Sifende avisa a Odoo en
-cuanto SIFEN responde; si no, o si el aviso se pierde, lo hace el
+<em>Mensaje EDI</em>. Si el webhook está registrado, Sifende avisa a Odoo
+en cuanto SIFEN responde; si no, o si el aviso se pierde, lo hace el
 cron «Sifende: verificar estado de documentos» (cada 5 minutos).</li>
 <li>Si el documento queda con <em>Rechazado</em> antes de llegar a SIFEN (por
 ejemplo por un campo obligatorio), corrija el dato y pulse
 <strong>Reintentar</strong>: usa una clave de idempotencia nueva. Si queda con
 <em>Error</em> por un fallo de conexión o de Sifende antes de registrar el
-documento (el mensaje lo indica), <strong>Reintentar</strong> usa la misma clave y
-no se duplica. Si el <em>Error</em> es un fallo definitivo del envío a
+documento (el mensaje lo indica), <strong>Reintentar</strong> usa la misma clave
+y no se duplica. Si el <em>Error</em> es un fallo definitivo del envío a
 SIFEN, el documento ya tiene CDC y número tomados: <strong>Reintentar</strong> no
 lo reemite y muestra el procedimiento. Reintente el lote desde el
 panel de Sifende o pídalo a soporte; Odoo consulta el documento cada
@@ -491,25 +491,39 @@ datos, y <strong>Reintentar</strong> muestra el procedimiento en lugar de enviar
 Con el rol <em>Contabilidad &gt; Administrador</em>, abra <em>Facturación
 Electrónica &gt; Inutilización de números</em> (dentro de la aplicación de
 Facturación o Contabilidad), cree la inutilización con el timbrado y
-el número del documento rechazado, y pulse <strong>Enviar al SIFEN</strong>. Luego
-pulse <strong>Restablecer a borrador</strong> y <strong>Cancelar</strong> en el documento
-rechazado y emita uno nuevo, que recibe el número siguiente. Odoo
-solo permite inutilizar números sin documento o de documentos
-rechazados.</li>
+el número del documento rechazado, y pulse <strong>Enviar al SIFEN</strong>.
+Luego pulse <strong>Restablecer a borrador</strong> y <strong>Cancelar</strong> en el
+documento rechazado y emita uno nuevo, que recibe el número
+siguiente. Odoo solo permite inutilizar números sin documento o de
+documentos rechazados.</li>
 <li>Para cancelar un documento aceptado, pulse <strong>Cancelar EDI</strong>: se abre
 el asistente «Cancelar documento electrónico», donde se escribe el
 motivo (se envía a SIFEN) y se confirma con <strong>Cancelar Documento</strong>.
 Hace falta el rol <em>Contabilidad &gt; Facturación</em> y estar dentro del
 plazo que valida Odoo (48 horas las facturas y autofacturas, 7 días
 las notas).</li>
-<li>En guaraníes, Sifende redondea el total hacia abajo a múltiplos de 50
-y exige que los pagos y las cuotas lo cubran: el conector reparte los
-montos de Odoo en proporción y la última cuota absorbe el resto.</li>
+<li>Con el documento <em>Aceptado</em>, <strong>Imprimir</strong> (el botón y los reportes
+del menú) entrega el KuDE que genera Sifende, con el CDC y el QR, en
+lugar del PDF estándar de Odoo. <strong>Enviar</strong> manda por correo el KuDE
+y el XML firmado (si todavía no están descargados, Odoo los trae de
+Sifende; si Sifende aún no los entrega, muestra un aviso y se puede
+reintentar). Mientras el documento no esté <em>Aceptado</em> (borrador,
+procesando, rechazado o con error), <strong>Enviar</strong> avisa que todavía no
+hay comprobante fiscal. <strong>Imprimir</strong> sigue imprimiendo el PDF de
+Odoo, pero con el aviso «Sin validez fiscal». Si el documento fue
+<em>Cancelado</em>, <strong>Enviar</strong> no manda el KuDE y <strong>Imprimir</strong> muestra el
+aviso de documento cancelado. Las facturas de proveedor y las de
+otros proveedores de EDI conservan el comportamiento estándar de
+Odoo.</li>
+<li>En guaraníes, Sifende redondea el total hacia abajo a múltiplos de
+50 y exige que los pagos y las cuotas lo cubran: el conector reparte
+los montos de Odoo en proporción y la última cuota absorbe el resto.</li>
 <li>Si Sifende responde que el número ya está en uso, el documento queda
 en <em>Error</em>. Suba <em>Número Desde</em> del timbrado al siguiente número
 libre del punto (panel de Sifende &gt; Numeración) y pulse
-<strong>Renumerar</strong>: el documento toma el siguiente número libre, nunca uno
-que Sifende ya informó, y se envía de nuevo con <strong>Enviar a EDI</strong>.</li>
+<strong>Renumerar</strong>: el documento toma el siguiente número libre, nunca
+uno que Sifende ya informó, y se envía de nuevo con <strong>Enviar a
+EDI</strong>.</li>
 </ol>
 <p>La vista previa del XML y del QR no está disponible: Sifende no genera
 documentos sin emitirlos.</p>

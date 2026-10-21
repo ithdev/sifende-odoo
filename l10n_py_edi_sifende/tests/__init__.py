@@ -14,3 +14,4 @@ from . import test_numbering
 from . import test_frozen_payment
 from . import test_form_details
 from . import test_partner_identity
+from . import test_kude

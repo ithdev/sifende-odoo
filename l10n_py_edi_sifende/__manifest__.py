@@ -18,6 +18,7 @@
         "views/res_partner_views.xml",
         "views/l10n_py_number_inutilization_views.xml",
         "views/uom_uom_views.xml",
+        "report/account_report_templates.xml",
     ],
     "installable": True,
     "application": False,
