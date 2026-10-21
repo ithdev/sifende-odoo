@@ -27,6 +27,12 @@ DOC_DEBIT_NOTE = "6"
 DOC_DELIVERY_NOTE = "7"
 CAPITAL_DEPARTMENT_CODE = 1
 RESUBMITTED_STATES = ("PENDIENTE", "EN_LOTE")
+FROZEN_PAYMENT_FIELDS = (
+    "l10n_py_payment_type",
+    "l10n_py_sifende_cheque_numero",
+    "l10n_py_sifende_cheque_banco",
+    "invoice_payment_term_id",
+)
 WEBHOOK_STATES = {
     "documento.aprobado": "APROBADO",
     "documento.rechazado": "RECHAZADO",
@@ -222,6 +228,41 @@ class AccountMove(models.Model):
         self.ensure_one()
         database = self.env["ir.config_parameter"].sudo().get_param("database.uuid")
         return f"odoo:{database}:{self.id}:{self.l10n_py_sifende_intento}"
+
+    # === Datos de pago congelados ===
+
+    def _l10n_py_sifende_payment_frozen(self):
+        self.ensure_one()
+        return bool(
+            (
+                self.l10n_py_cdc
+                or self.l10n_py_edi_status in ("sent", "processing", "accepted")
+            )
+            and self._l10n_py_sifende_connector()
+        )
+
+    def _l10n_py_sifende_frozen_error(self):
+        return UserError(
+            self.env._(
+                "Los datos de pago de un documento enviado a Sifende no se pueden "
+                "modificar: SIFEN ya tiene los del documento %(name)s.",
+                name=self.l10n_py_cdc or self.name,
+            )
+        )
+
+    def write(self, vals):
+        changed = [name for name in FROZEN_PAYMENT_FIELDS if name in vals]
+        if changed:
+            for move in self:
+                if not move._l10n_py_sifende_payment_frozen():
+                    continue
+                for name in changed:
+                    field = move._fields[name]
+                    if field.convert_to_write(move[name], move) != (
+                        vals[name] or False
+                    ):
+                        raise move._l10n_py_sifende_frozen_error()
+        return super().write(vals)
 
     # === Datos adicionales para Sifende ===
 
