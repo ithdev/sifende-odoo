@@ -6,3 +6,4 @@ from . import test_webhook_controller
 from . import test_webhook_admin
 from . import test_security
 from . import test_cron
+from . import test_procedures

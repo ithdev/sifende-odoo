@@ -474,8 +474,20 @@ pestaña <em>Facturación electrónica</em>), complete el número del cheque
 (solo dígitos, hasta 8) y el banco (de 4 a 20 caracteres): Sifende
 los exige.</li>
 <li>Si SIFEN rechazó un documento y se cambió la fecha o el código de
-seguridad, Sifende pide inutilizar el número y emitir uno nuevo
-(<em>Facturación electrónica &gt; Inutilización de números</em>).</li>
+seguridad, Sifende no permite reutilizar ese número. Con el rol
+<em>Contabilidad &gt; Administrador</em>, abra <em>Facturación Electrónica &gt;
+Inutilización de números</em> (dentro de la aplicación de Facturación o
+Contabilidad), cree la inutilización con el timbrado y el número del
+documento rechazado, y pulse <strong>Enviar al SIFEN</strong>. Luego pulse
+<strong>Restablecer a borrador</strong> y <strong>Cancelar</strong> en el documento rechazado y
+emita uno nuevo, que recibe el número siguiente. Odoo solo permite
+inutilizar números sin documento o de documentos rechazados.</li>
+<li>Para cancelar un documento aceptado, pulse <strong>Cancelar EDI</strong>: se abre
+el asistente «Cancelar documento electrónico», donde se escribe el
+motivo (se envía a SIFEN) y se confirma con <strong>Cancelar Documento</strong>.
+Hace falta el rol <em>Contabilidad &gt; Facturación</em> y estar dentro del
+plazo que valida Odoo (48 horas las facturas y autofacturas, 7 días
+las notas).</li>
 </ol>
 <p>La vista previa del XML y del QR no está disponible: Sifende no genera
 documentos sin emitirlos.</p>

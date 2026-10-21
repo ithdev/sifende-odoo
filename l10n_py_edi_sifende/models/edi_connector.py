@@ -350,9 +350,9 @@ class EDIConnector(models.Model):
             failure["error"] = self.env._(
                 "El documento fue rechazado y cambió respecto del envío original, "
                 "así que SIFEN no admite reutilizar ese número. Inutilice el "
-                "número desde "
-                "Facturación electrónica > Inutilización de números y vuelva a emitir. "
-                "%(detail)s",
+                "número desde Facturación Electrónica > Inutilización de números, "
+                "cancele este documento (Restablecer a borrador y Cancelar) y emita "
+                "uno nuevo. %(detail)s",
                 detail=response.detail or "",
             )
         elif slug in (

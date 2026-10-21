@@ -1,5 +1,11 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <odoo>
+    <record id="action_l10n_py_edi_cancel_wizard" model="ir.actions.act_window">
+        <field name="name">Cancelar documento electrónico</field>
+        <field name="res_model">l10n_py.edi.cancel.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
     <record id="view_move_form_edi_sifende" model="ir.ui.view">
         <field name="name">account.move.form.edi.sifende</field>
         <field name="model">account.move</field>
@@ -10,6 +16,13 @@
                     name="l10n_py_sifende_motivo_emision"
                     invisible="l10n_py_doc_type_code not in ['5', '6']"
                 />
+            </xpath>
+            <xpath expr="//button[@name='action_cancel_edi']" position="attributes">
+                <attribute
+                    name="name"
+                >%(l10n_py_edi_sifende.action_l10n_py_edi_cancel_wizard)d</attribute>
+                <attribute name="type">action</attribute>
+                <attribute name="groups">account.group_account_invoice</attribute>
             </xpath>
             <xpath expr="//field[@name='l10n_py_payment_type']" position="after">
                 <field
