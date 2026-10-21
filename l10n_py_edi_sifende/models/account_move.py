@@ -19,12 +19,14 @@ CRON_TIME_BUDGET = 45
 # la cancelación vence a los 7 días de la emisión (OCA) y sobra un margen
 CANCEL_WATCH_DAYS = 10
 CANCEL_RECHECK_HOURS = 1
+FAILED_RECHECK_HOURS = 1
 PAYMENT_CHEQUE = "2"
 DOC_INVOICE = "1"
 DOC_CREDIT_NOTE = "5"
 DOC_DEBIT_NOTE = "6"
 DOC_DELIVERY_NOTE = "7"
 CAPITAL_DEPARTMENT_CODE = 1
+RESUBMITTED_STATES = ("PENDIENTE", "EN_LOTE")
 WEBHOOK_STATES = {
     "documento.aprobado": "APROBADO",
     "documento.rechazado": "RECHAZADO",
@@ -42,6 +44,7 @@ class AccountMove(models.Model):
         readonly=True,
     )
     l10n_py_sifende_reintento_misma_clave = fields.Boolean(copy=False)
+    l10n_py_sifende_envio_fallido = fields.Boolean(copy=False)
     l10n_py_sifende_archivos_pendientes = fields.Boolean(copy=False)
     l10n_py_sifende_ultima_consulta = fields.Datetime(copy=False, readonly=True)
     l10n_py_sifende_motivo_emision = fields.Selection(
@@ -293,6 +296,8 @@ class AccountMove(models.Model):
         connector = self._l10n_py_sifende_connector()
         if not connector:
             return super().action_send_edi()
+        if self._l10n_py_sifende_is_failed():
+            raise UserError(self._l10n_py_sifende_failed_steps())
         self._validate_edi_data()
         document_data = self._prepare_edi_document_data()
         self.l10n_py_edi_status = "sent"
@@ -311,6 +316,7 @@ class AccountMove(models.Model):
                 "l10n_py_sifende_reintento_misma_clave": bool(
                     response.get("transient")
                 ),
+                "l10n_py_sifende_envio_fallido": False,
             }
         )
 
@@ -325,6 +331,7 @@ class AccountMove(models.Model):
                 "l10n_py_cdc": cdc,
                 "l10n_py_qr_string": result.get("qr"),
                 "l10n_py_edi_status": "processing",
+                "l10n_py_sifende_envio_fallido": False,
                 "l10n_py_edi_batch_id": cdc,
                 "l10n_py_edi_message": self.env._(
                     "Enviado a Sifende; esperando la respuesta de SIFEN."
@@ -344,12 +351,26 @@ class AccountMove(models.Model):
         if self._l10n_py_sifende_connector():
             if self.l10n_py_edi_status == "rejected" and self.l10n_py_cdc:
                 raise UserError(self._l10n_py_sifende_rejection_steps())
+            if self._l10n_py_sifende_is_failed():
+                raise UserError(self._l10n_py_sifende_failed_steps())
             if (
                 self.l10n_py_edi_status in ("error", "rejected")
                 and not self.l10n_py_sifende_reintento_misma_clave
             ):
                 self.l10n_py_sifende_intento += 1
         return super().action_retry_edi()
+
+    def _l10n_py_sifende_is_failed(self):
+        self.ensure_one()
+        return self.l10n_py_edi_status == "error" and self.l10n_py_sifende_envio_fallido
+
+    def _l10n_py_sifende_failed_steps(self):
+        return self.env._(
+            "El envío a SIFEN de este documento falló y Odoo no lo reemite: el "
+            "número y el CDC ya están tomados en Sifende. Reintente el lote desde "
+            "el panel de Sifende o pídalo a soporte. Odoo actualiza el estado solo "
+            "cuando el documento vuelva a procesarse (mismo CDC)."
+        )
 
     def _l10n_py_sifende_rejection_steps(self):
         return self.env._(
@@ -407,6 +428,7 @@ class AccountMove(models.Model):
     def _l10n_py_sifende_to_sync(self, connector):
         now = fields.Datetime.now()
         recheck = now - timedelta(hours=CANCEL_RECHECK_HOURS)
+        failed_recheck = now - timedelta(hours=FAILED_RECHECK_HOURS)
         watch_from = fields.Date.context_today(self) - timedelta(days=CANCEL_WATCH_DAYS)
         # primero los que nunca se consultaron o hace más que se consultaron: así el
         # límite del lote rota por todos en lugar de repetir siempre los mismos
@@ -414,6 +436,7 @@ class AccountMove(models.Model):
             [
                 ("company_id", "=", connector.company_id.id),
                 ("l10n_py_cdc", "!=", False),
+                "|",
                 "|",
                 "|",
                 ("l10n_py_edi_status", "=", "processing"),
@@ -425,6 +448,13 @@ class AccountMove(models.Model):
                 "|",
                 ("l10n_py_sifende_ultima_consulta", "=", False),
                 ("l10n_py_sifende_ultima_consulta", "<", recheck),
+                "&",
+                "&",
+                ("l10n_py_edi_status", "=", "error"),
+                ("l10n_py_sifende_envio_fallido", "=", True),
+                "|",
+                ("l10n_py_sifende_ultima_consulta", "=", False),
+                ("l10n_py_sifende_ultima_consulta", "<", failed_recheck),
             ],
             limit=CRON_BATCH_SIZE,
             order="l10n_py_sifende_ultima_consulta asc nulls first, id",
@@ -432,7 +462,10 @@ class AccountMove(models.Model):
 
     def _l10n_py_sifende_sync(self, connector, kude_wait=KUDE_MAX_WAIT):
         self.ensure_one()
-        if self.l10n_py_edi_status in ("processing", "accepted"):
+        if (
+            self.l10n_py_edi_status in ("processing", "accepted")
+            or self._l10n_py_sifende_is_failed()
+        ):
             self._l10n_py_sifende_refresh_state(connector)
         if self.l10n_py_edi_status == "accepted":
             self._l10n_py_sifende_fetch_files(connector, kude_wait)
@@ -454,15 +487,18 @@ class AccountMove(models.Model):
     def _l10n_py_sifende_apply_state(self, state, message=None):
         self.ensure_one()
         status = self.l10n_py_edi_status
-        if state in APPROVED_STATES and status == "processing":
+        failed = self._l10n_py_sifende_is_failed()
+        in_flight = status == "processing" or failed
+        if state in APPROVED_STATES and in_flight:
             self.write(
                 {
                     "l10n_py_edi_status": "accepted",
+                    "l10n_py_sifende_envio_fallido": False,
                     "l10n_py_edi_message": message
                     or self.env._("Documento aprobado por SIFEN."),
                 }
             )
-        elif state == "RECHAZADO" and status == "processing":
+        elif state == "RECHAZADO" and in_flight:
             self.write(
                 {
                     "l10n_py_edi_status": "rejected",
@@ -473,15 +509,27 @@ class AccountMove(models.Model):
                         )
                     ),
                     "l10n_py_sifende_reintento_misma_clave": False,
+                    "l10n_py_sifende_envio_fallido": False,
                 }
             )
         elif state == "ERROR" and status == "processing":
             self.write(
                 {
                     "l10n_py_edi_status": "error",
-                    "l10n_py_edi_message": message
-                    or self.env._(
-                        "El envío falló en Sifende. Revise el panel de Sifende."
+                    "l10n_py_sifende_envio_fallido": True,
+                    "l10n_py_sifende_reintento_misma_clave": False,
+                    "l10n_py_edi_message": "\n\n".join(
+                        filter(None, (message, self._l10n_py_sifende_failed_steps()))
+                    ),
+                }
+            )
+        elif state in RESUBMITTED_STATES and failed:
+            self.write(
+                {
+                    "l10n_py_edi_status": "processing",
+                    "l10n_py_sifende_envio_fallido": False,
+                    "l10n_py_edi_message": self.env._(
+                        "Sifende reintentó el envío; esperando la respuesta de SIFEN."
                     ),
                 }
             )
@@ -493,8 +541,10 @@ class AccountMove(models.Model):
         announced = WEBHOOK_STATES[event_type]
         status = self.l10n_py_edi_status
         # los avisos pueden llegar desordenados: el estado vigente lo dice la consulta
-        if status == "processing" or (
-            announced == "CANCELADO" and status == "accepted"
+        if (
+            status == "processing"
+            or self._l10n_py_sifende_is_failed()
+            or (announced == "CANCELADO" and status == "accepted")
         ):
             results = data.get("resultados")
             message = "\n".join(

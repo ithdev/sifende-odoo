@@ -158,6 +158,24 @@ class TestWebhookController(SifendeCommon, HttpCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(move.l10n_py_edi_status, "cancelled")
 
+    def test_aprobado_tras_un_error_de_sifende_acepta_el_documento(self):
+        move = self.processing_move()
+        move.write(
+            {"l10n_py_edi_status": "error", "l10n_py_sifende_envio_fallido": True}
+        )
+        response = self.post("documento.aprobado")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(move.l10n_py_edi_status, "accepted")
+        self.assertFalse(move.l10n_py_sifende_envio_fallido)
+        self.assertTrue(move.l10n_py_kude_pdf)
+
+    def test_un_aviso_sobre_un_error_local_no_consulta_a_sifende(self):
+        move = self.processing_move()
+        move.l10n_py_edi_status = "error"
+        self.post("documento.aprobado")
+        self.assertEqual(move.l10n_py_edi_status, "error")
+        self.assertFalse(self.fake.calls_to("GET", "/status/"))
+
     def test_un_rechazo_tardio_no_pisa_un_documento_aceptado(self):
         move = self.processing_move()
         self.post("documento.aprobado")
