@@ -9,7 +9,7 @@ import requests
 from requests.structures import CaseInsensitiveDict
 
 from odoo import api, fields, models
-from odoo.exceptions import UserError
+from odoo.exceptions import AccessError, UserError, ValidationError
 
 from ..services.request_builder import SifendeRequestBuilder
 
@@ -36,6 +36,11 @@ PENDING_STATES = ("PENDIENTE", "EN_LOTE")
 WEBHOOK_PATH = "/l10n_py_edi_sifende/webhook"
 WEBHOOK_EVENTS = ("documento.aprobado", "documento.rechazado", "documento.cancelado")
 LOCAL_HOSTS = ("localhost", "127.0.0.1", "0.0.0.0", "::1")
+
+GROUP_READONLY = "account.group_account_readonly"
+GROUP_BILLING = "account.group_account_invoice"
+GROUP_MANAGER = "account.group_account_manager"
+READ_GROUPS = (GROUP_READONLY, GROUP_BILLING)
 
 
 class SifendeTransportError(Exception):
@@ -79,6 +84,14 @@ class SifendeResponse:
             return None
 
 
+def is_secure_url(url):
+    parts = urlsplit(url or "")
+    host = parts.hostname or ""
+    if not host:
+        return False
+    return parts.scheme == "https" or (parts.scheme == "http" and host in LOCAL_HOSTS)
+
+
 def mask_key(api_key):
     if not api_key:
         return ""
@@ -102,6 +115,7 @@ class EDIConnector(models.Model):
     sifende_base_url = fields.Char(
         string="URL de Sifende",
         default=DEFAULT_BASE_URL,
+        groups="base.group_system",
     )
     sifende_ambiente = fields.Char(
         string="Ambiente de la API key",
@@ -137,6 +151,19 @@ class EDIConnector(models.Model):
                 else False
             )
 
+    @api.constrains("sifende_base_url")
+    def _check_sifende_base_url(self):
+        for connector in self.sudo():
+            if connector.sifende_base_url and not is_secure_url(
+                connector.sifende_base_url
+            ):
+                raise ValidationError(self._sifende_insecure_url_message())
+
+    def _sifende_insecure_url_message(self):
+        return self.env._(
+            "La URL de Sifende debe usar HTTPS; HTTP solo se admite para localhost."
+        )
+
     def write(self, vals):
         if "sifende_api_key" in vals and "sifende_ambiente" not in vals:
             vals = {**vals, "sifende_ambiente": False}
@@ -144,31 +171,53 @@ class EDIConnector(models.Model):
 
     # === Interfaz pública del conector ===
 
+    def _sifende_check_access(self, *groups):
+        self.ensure_one()
+        # OCA llama con sudo(): se valida al usuario real, no al superusuario
+        connector = self.sudo(False)
+        if connector.env.su:
+            return
+        connector.check_access("read")
+        if not any(connector.env.user.has_group(group) for group in groups):
+            raise AccessError(
+                self.env._("No tiene permisos para operar el conector de Sifende.")
+            )
+
+    @api.private
     def send_document(self, invoice_data):
         if self.provider_type != "sifende":
             return super().send_document(invoice_data)
+        self._sifende_check_access(GROUP_BILLING)
         return self._sifende_send_document(invoice_data)
 
+    @api.private
     def check_status(self, document_id):
         if self.provider_type != "sifende":
             return super().check_status(document_id)
+        self._sifende_check_access(*READ_GROUPS)
         return self._sifende_check_status(document_id)
 
+    @api.private
     def cancel_document(self, document_id, reason=""):
         if self.provider_type != "sifende":
             return super().cancel_document(document_id, reason)
+        self._sifende_check_access(GROUP_BILLING)
         return self._sifende_cancel_document(document_id, reason)
 
+    @api.private
     def inutilize_range(self, data):
         if self.provider_type != "sifende":
             return super().inutilize_range(data)
+        self._sifende_check_access(GROUP_MANAGER)
         return self._sifende_inutilize_range(data)
 
+    @api.private
     def preview_document(self, invoice_data):
         if self.provider_type != "sifende":
             return super().preview_document(invoice_data)
         raise UserError(self._sifende_no_preview_message())
 
+    @api.private
     def preview_qr(self, invoice_data):
         if self.provider_type != "sifende":
             return super().preview_qr(invoice_data)
@@ -177,9 +226,10 @@ class EDIConnector(models.Model):
     def test_connection(self):
         if self.provider_type != "sifende":
             return super().test_connection()
+        self._sifende_check_access(GROUP_MANAGER)
         return self._sifende_test_connection()
 
-    def sifende_fetch_xml(self, cdc, document=None):
+    def _sifende_fetch_xml(self, cdc, document=None):
         self.ensure_one()
         response = self._sifende_call(
             "GET",
@@ -197,7 +247,7 @@ class EDIConnector(models.Model):
             )
         raise UserError(self._sifende_failure_message(response))
 
-    def sifende_fetch_kude(self, cdc, document=None, max_wait=KUDE_MAX_WAIT):
+    def _sifende_fetch_kude(self, cdc, document=None, max_wait=KUDE_MAX_WAIT):
         self.ensure_one()
         params = None
         waited = 0
@@ -704,7 +754,7 @@ class EDIConnector(models.Model):
     # === HTTP ===
 
     def _sifende_base_url(self):
-        return (self.sifende_base_url or DEFAULT_BASE_URL).rstrip("/")
+        return (self.sudo().sifende_base_url or DEFAULT_BASE_URL).rstrip("/")
 
     def _sifende_call(
         self,
@@ -731,6 +781,8 @@ class EDIConnector(models.Model):
                 )
             )
         url = f"{self._sifende_base_url()}{API_PREFIX}{path}"
+        if authenticated and not is_secure_url(url):
+            raise UserError(self._sifende_insecure_url_message())
         headers = {"Accept": "application/json", "User-Agent": USER_AGENT}
         if authenticated:
             headers["Authorization"] = f"Bearer {api_key}"

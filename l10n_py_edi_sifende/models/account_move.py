@@ -281,6 +281,12 @@ class AccountMove(models.Model):
         )
         self._l10n_py_generate_qr_image()
 
+    def action_cancel_edi(self):
+        self.ensure_one()
+        if self._l10n_py_sifende_connector():
+            self.check_access("write")
+        return super().action_cancel_edi()
+
     def action_retry_edi(self):
         self.ensure_one()
         if (
@@ -298,7 +304,8 @@ class AccountMove(models.Model):
             return super()._generate_kude()
         if not self.l10n_py_cdc:
             return
-        pdf = connector.sifende_fetch_kude(
+        self.check_access("write")
+        pdf = connector._sifende_fetch_kude(
             self.l10n_py_cdc,
             document=self,
             max_wait=self.env.context.get("l10n_py_sifende_kude_wait", KUDE_MAX_WAIT),
@@ -344,7 +351,9 @@ class AccountMove(models.Model):
     def _l10n_py_sifende_sync(self, connector):
         self.ensure_one()
         if self.l10n_py_edi_status == "processing":
-            result = connector.check_status(self.l10n_py_cdc).get("result") or {}
+            result = (
+                connector._sifende_check_status(self.l10n_py_cdc).get("result") or {}
+            )
             self._l10n_py_sifende_apply_state(
                 result.get("estado"), result.get("mensajeRechazo")
             )
@@ -404,7 +413,7 @@ class AccountMove(models.Model):
         pending = False
         if not self.l10n_py_edi_xml:
             try:
-                xml = connector.sifende_fetch_xml(self.l10n_py_cdc, document=self)
+                xml = connector._sifende_fetch_xml(self.l10n_py_cdc, document=self)
                 self.write(
                     {
                         "l10n_py_edi_xml": base64.b64encode(xml),
