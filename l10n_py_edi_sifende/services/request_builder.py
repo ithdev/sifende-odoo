@@ -147,8 +147,6 @@ class SifendeRequestBuilder:
     def _zip_items(data, extra):
         items = data.get("items") or []
         extras = extra.get("items") or [{}] * len(items)
-        if len(extras) != len(items):
-            extras = [{}] * len(items)
         return zip(items, extras, strict=True)
 
     def _item(self, item, extra_item):

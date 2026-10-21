@@ -331,3 +331,11 @@ class TestRequestMapping(SifendeCommon):
             self.builder()._credito(
                 self.credit(30000.0, 60000.0), {"montoTotal": 100000.0}, 0
             )
+
+    def test_unos_items_desalineados_con_sus_datos_extra_no_se_ocultan(self):
+        items = [{"codigo": "A"}, {"codigo": "B"}]
+        self.assertEqual(
+            len(list(SifendeRequestBuilder._zip_items({"items": items}, {}))), 2
+        )
+        with self.assertRaises(ValueError):
+            list(SifendeRequestBuilder._zip_items({"items": items}, {"items": [{}]}))
