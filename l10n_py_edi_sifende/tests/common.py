@@ -296,6 +296,9 @@ class SifendeCommon(TransactionCase):
 
     def setUp(self):
         super().setUp()
+        if self.registry.test_cr is None:
+            self.registry.enter_test_mode(self.cr)
+            self.addCleanup(self.registry.leave_test_mode)
         self.env["l10n_py.edi.connector"]._sifende_clear_enum_cache()
         self.enums = copy.deepcopy(self.enums_fixture)
         self.fake = FakeSifende()

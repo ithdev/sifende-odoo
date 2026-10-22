@@ -29,7 +29,7 @@ DOC_CREDIT_NOTE = "5"
 DOC_DEBIT_NOTE = "6"
 DOC_DELIVERY_NOTE = "7"
 CAPITAL_DEPARTMENT_CODE = 1
-RESUBMITTED_STATES = ("PENDIENTE", "EN_LOTE")
+RESUBMITTED_STATES = ("PENDIENTE", "EN_LOTE", "ENVIADO")
 FROZEN_PAYMENT_FIELDS = (
     "l10n_py_payment_type",
     "l10n_py_sifende_cheque_numero",
@@ -94,6 +94,7 @@ class AccountMove(models.Model):
     l10n_py_sifende_cdc_existente = fields.Char(copy=False, readonly=True)
     l10n_py_sifende_archivos_pendientes = fields.Boolean(copy=False)
     l10n_py_sifende_ultima_consulta = fields.Datetime(copy=False, readonly=True)
+    l10n_py_sifende_event_key = fields.Char(copy=False, readonly=True)
     l10n_py_sifende_motivo_emision = fields.Selection(
         [
             ("1", "Devolución y ajuste de precios"),

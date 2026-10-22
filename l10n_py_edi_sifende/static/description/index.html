@@ -542,6 +542,15 @@ documento.</li>
 muestran el tipo y el número fiscal (por ejemplo, <em>Nota de Débito
 001-001-0000101</em>). El número interno de Odoo (<em>FE 00000027</em>) es la
 secuencia contable del diario y no se modifica.</li>
+<li>Si Sifende responde que falta configuración (datos del
+contribuyente, timbrado o certificado sin vigencia), el documento
+queda en <em>Error</em>, no en <em>Rechazado</em>: el mensaje indica qué corregir
+en el panel de Sifende; luego pulse <strong>Reintentar</strong>.</li>
+<li>Si Sifende no responde al cancelar un documento o al enviar una
+inutilización, vuelva a intentarlo: Odoo reutiliza la misma
+solicitud y no se duplica el evento. <em>Probar conexión</em> avisa de los
+puntos de expedición inactivos, y <em>Registrar webhook</em>, de un webhook
+desactivado en Sifende.</li>
 </ol>
 <p>La vista previa del XML y del QR no está disponible: Sifende no genera
 documentos sin emitirlos.</p>

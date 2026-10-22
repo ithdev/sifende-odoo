@@ -163,6 +163,15 @@ class TestCron(SifendeCommon):
         self.assertEqual(move.l10n_py_edi_status, "processing")
         self.assertFalse(move.l10n_py_sifende_envio_fallido)
 
+    def test_un_error_de_sifende_que_pasa_a_enviado_vuelve_a_procesando(self):
+        (move,) = self.make_tracked(
+            1, status="error", l10n_py_sifende_envio_fallido=True
+        )
+        self.route_status(move, "ENVIADO")
+        self.run_cron()
+        self.assertEqual(move.l10n_py_edi_status, "processing")
+        self.assertFalse(move.l10n_py_sifende_envio_fallido)
+
     def test_un_error_de_sifende_aprobado_despues_queda_aceptado(self):
         (move,) = self.make_tracked(
             1, status="error", l10n_py_sifende_envio_fallido=True
