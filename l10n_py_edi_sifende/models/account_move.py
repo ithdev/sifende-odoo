@@ -3,7 +3,7 @@ import logging
 import time
 from datetime import timedelta
 
-from odoo import api, fields, models
+from odoo import SUPERUSER_ID, api, fields, models
 from odoo.exceptions import UserError
 
 from .edi_connector import (
@@ -773,7 +773,7 @@ class AccountMove(models.Model):
     def _l10n_py_sifende_attach(self, name, content, mimetype):
         # los binarios de OCA no salen en el chatter: se adjuntan también como archivos
         self.ensure_one()
-        attachments = self.env["ir.attachment"].sudo()
+        attachments = self.env["ir.attachment"].with_user(SUPERUSER_ID)
         domain = [
             ("res_model", "=", "account.move"),
             ("res_id", "=", self.id),
