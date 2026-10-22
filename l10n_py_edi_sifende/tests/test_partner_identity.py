@@ -44,6 +44,8 @@ class TestPartnerIdentity(TransactionCase):
         )["arch"]
         tree = etree.fromstring(arch)
         for name in (
+            "l10n_py_taxpayer_type",
+            "l10n_py_activity_description",
             "l10n_py_doc_type",
             "l10n_py_doc_number",
             "l10n_py_sifende_city_id",
