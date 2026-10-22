@@ -10,5 +10,5 @@ class AccountMoveLine(models.Model):
                 lambda line: line.display_type == "payment_term"
             ).move_id:
                 if move._l10n_py_sifende_frozen():
-                    raise move._l10n_py_sifende_frozen_error()
+                    raise move._l10n_py_sifende_frozen_error(amounts=True)
         return super().write(vals)

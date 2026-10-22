@@ -17,3 +17,4 @@ from . import test_form_details
 from . import test_partner_identity
 from . import test_kude
 from . import test_frozen_fiscal
+from . import test_reset_draft
