@@ -6,6 +6,10 @@ from odoo.tests import tagged
 
 from .common import CDC, FakeResponse, SifendeCommon, problem
 
+OCA_INUTILIZATION_LOGGER = (
+    "odoo.addons.l10n_py_edi_base.models.l10n_py_number_inutilization"
+)
+
 EVENT_OK = FakeResponse(200, {"estadoEvento": "APROBADO"})
 
 
@@ -199,9 +203,10 @@ class TestProcedures(SifendeCommon):
         self.fake.add(
             "POST", "/inutilizar$", problem("idempotency-upstream-unknown", 503)
         )
-        for _ in range(2):
-            self.fails(inutilization.action_send)
-            inutilization.state = "draft"
+        with self.assertLogs(OCA_INUTILIZATION_LOGGER, "WARNING"):
+            for _ in range(2):
+                self.fails(inutilization.action_send)
+                inutilization.state = "draft"
         self.assertEqual(len(set(self.event_keys("/inutilizar$"))), 1)
         self.fake.add("POST", "/inutilizar$", EVENT_OK)
         inutilization.action_send()
@@ -219,7 +224,10 @@ class TestProcedures(SifendeCommon):
                 "El número fin debe ser mayor al número inicio (código SIFEN 4068)",
             ),
         )
-        with self.assertRaisesRegex(UserError, "debe ser mayor al número inicio"):
+        with (
+            self.assertLogs(OCA_INUTILIZATION_LOGGER, "WARNING"),
+            self.assertRaisesRegex(UserError, "debe ser mayor al número inicio"),
+        ):
             inutilization.action_send()
         self.assertFalse(inutilization.l10n_py_sifende_event_key)
 
