@@ -104,7 +104,9 @@ class TestRequestMapping(SifendeCommon):
         self.assertEqual(payload["pagos"][0]["montoPago"], 11000)
 
     def test_pago_con_tarjeta_informa_tarjeta(self):
-        move = self.make_move("fe", l10n_py_payment_type="3")
+        move = self.make_move(
+            "fe", l10n_py_payment_type="3", l10n_py_sifende_tarjeta_marca="99"
+        )
         payload = self.sent_payload(move)
         self.assertEqual(
             payload["pagos"][0]["tarjeta"],
@@ -225,14 +227,6 @@ class TestRequestMapping(SifendeCommon):
             l10n_py_sifende_afe_provision_city_id=self.env["l10n_py.sifende.city"]
             .search([("code", "=", 2886)])
             .id,
-        )
-        self.env["l10n_py.associated.document"].create(
-            {
-                "move_id": move.id,
-                "association_type": "3",
-                "constancia_type": "1",
-                "constancia_number": "CONST-1",
-            }
         )
         self.assertEqual(self.sent_payload(move), self.expected("afe"))
 

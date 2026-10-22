@@ -57,10 +57,16 @@ class Transport(models.Model):
             transport.departure_district = district
             transport.departure_city = city
 
-    @api.depends("move_id.name", "transporter_name")
+    @api.depends(
+        "move_id.name", "move_id.l10n_py_sifende_document_name", "transporter_name"
+    )
     def _compute_display_name(self):
         for transport in self:
-            parts = [transport.move_id.name, transport.transporter_name]
+            move = transport.move_id
+            parts = [
+                move.l10n_py_sifende_document_name or move.name,
+                transport.transporter_name,
+            ]
             transport.display_name = " - ".join(p for p in parts if p) or self.env._(
                 "Transporte nuevo"
             )

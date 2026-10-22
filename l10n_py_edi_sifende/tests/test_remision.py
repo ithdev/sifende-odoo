@@ -256,16 +256,37 @@ class TestRemisionYAutofactura(SifendeCommon):
         }
 
     def make_afe(self, **vals):
-        move = self.make_move("af", **self.afe_vals(**vals))
-        self.env["l10n_py.associated.document"].create(
-            {
-                "move_id": move.id,
-                "association_type": "3",
-                "constancia_type": "1",
-                "constancia_number": "CONST-1",
-            }
+        return self.make_move("af", **self.afe_vals(**vals))
+
+    def constancias(self, move):
+        return move.l10n_py_associated_document_ids.filtered(
+            lambda doc: doc.association_type == "3"
         )
-        return move
+
+    def test_la_constancia_de_la_autofactura_se_asocia_sola_al_confirmar(self):
+        move = self.make_afe()
+        constancia = self.constancias(move)
+        self.assertEqual(move.l10n_py_associated_document_ids, constancia)
+        self.assertEqual(
+            (constancia.constancia_type, constancia.constancia_number),
+            ("1", "CONST-1"),
+        )
+
+    def test_la_constancia_asociada_sigue_los_cambios_de_la_seccion(self):
+        move = self.make_afe()
+        constancia = self.constancias(move)
+        move.l10n_py_afe_constancia_number = "CONST-2"
+        move._l10n_py_sifende_link_origin_document()
+        self.assertEqual(self.constancias(move), constancia)
+        self.assertEqual(constancia.constancia_number, "CONST-2")
+
+    def test_una_autofactura_sin_constancia_dice_que_documento_falta(self):
+        move = self.make_afe(l10n_py_afe_constancia_number=False)
+        self.assertFalse(move.l10n_py_associated_document_ids)
+        message = self.errors(move)
+        self.assertIn("falta la constancia electrónica", message)
+        self.assertIn("sección Autofactura", message)
+        self.assertNotIn("exactamente 1", message)
 
     def test_una_autofactura_en_una_ciudad_cuyo_codigo_de_oca_difiere(self):
         self.assertNotEqual(self.city_code, str(self.city_sifende.code))

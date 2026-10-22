@@ -2,6 +2,7 @@ import base64
 
 from lxml import etree
 
+from odoo.exceptions import UserError
 from odoo.tests import tagged
 
 from .common import CDC, FakeResponse, SifendeCommon
@@ -71,6 +72,19 @@ class TestFormDetails(SifendeCommon):
             button = tree.xpath(f"//button[@name='{name}']")[0]
             self.assertIn("l10n_py_sifende_enabled", button.get("invisible"), name)
 
+    def test_el_id_de_lote_se_oculta_con_el_conector_de_sifende(self):
+        tree = form_arch(self.env, "account.move", "account.view_move_form")
+        field = tree.xpath("//field[@name='l10n_py_edi_batch_id']")[0]
+        self.assertIn("l10n_py_sifende_enabled", field.get("invisible"))
+
+    def test_el_transporte_ofrece_solo_los_libres_o_del_propio_documento(self):
+        tree = form_arch(self.env, "account.move", "account.view_move_form")
+        for section in ("nre_section", "export_transport_section"):
+            field = tree.xpath(
+                f"//group[@name='{section}']//field[@name='l10n_py_transport_id']"
+            )[0]
+            self.assertIn("move_id", field.get("domain"), section)
+
     def test_el_estado_edi_muestra_el_qr(self):
         tree = form_arch(self.env, "account.move", "account.view_move_form")
         self.assertTrue(tree.xpath("//field[@name='l10n_py_qr_code'][@widget='image']"))
@@ -125,6 +139,45 @@ class TestButtonsByRole(SifendeCommon):
 
 
 @tagged("post_install", "-at_install", "l10n_py_edi_sifende")
+class TestFiscalName(SifendeCommon):
+    def test_el_nombre_fiscal_dice_el_tipo_y_el_numero_completo(self):
+        for kind, label in (
+            ("fe", "Factura"),
+            ("nc", "Nota de Crédito"),
+            ("nd", "Nota de Débito"),
+            ("nr", "Nota de Remisión"),
+            ("af", "Autofactura"),
+        ):
+            with self.subTest(kind=kind):
+                move = self.make_move(kind)
+                self.assertEqual(
+                    move.l10n_py_sifende_document_name, f"{label} 001-001-0000001"
+                )
+                self.assertEqual(move.display_name, move.l10n_py_sifende_document_name)
+                self.assertEqual(move._get_report_base_filename(), move.display_name)
+
+    def test_un_borrador_conserva_su_nombre(self):
+        move = self.make_move("nd", posted=False)
+        self.assertFalse(move.l10n_py_sifende_document_name)
+        self.assertEqual(move.display_name, "Draft Invoice")
+
+    def test_un_documento_de_otra_empresa_conserva_el_nombre_de_odoo(self):
+        move = self.make_move("fe")
+        self.connector.unlink()
+        move.invalidate_recordset()
+        self.assertFalse(move.l10n_py_sifende_document_name)
+        self.assertIn(move.name, move.display_name)
+
+    def test_el_asunto_del_correo_usa_el_nombre_fiscal(self):
+        move = self.make_move("nd")
+        subject = self.env["account.move.send"]._get_default_mail_subject(
+            move, move._get_mail_template(), "en_US"
+        )
+        self.assertIn("(Ref Nota de Débito 001-001-0000001)", subject)
+        self.assertNotIn(move.name, subject)
+
+
+@tagged("post_install", "-at_install", "l10n_py_edi_sifende")
 class TestChequeAndCard(SifendeCommon):
     def cheque(self, number, bank="Banco Continental", **vals):
         return self.make_move(
@@ -172,8 +225,27 @@ class TestChequeAndCard(SifendeCommon):
                 self.assertEqual(card["tipoTarjeta"], name)
                 self.assertNotIn("descripcionTipoTarjeta", card)
 
-    def test_sin_marca_la_tarjeta_sigue_siendo_otro(self):
+    def test_una_linea_sin_producto_dice_cual_es(self):
+        move = self.make_move(
+            "fe", lines=[self.line(product_id=False, name="Servicio sin código")]
+        )
+        with self.assertRaisesRegex(
+            UserError, 'La línea "Servicio sin código" no tiene producto'
+        ) as error:
+            move.action_send_edi()
+        self.assertNotIn("código NCM", str(error.exception))
+        self.assertFalse(self.fake.calls_to("POST", ".*"))
+
+    def test_una_tarjeta_sin_marca_se_frena_antes_de_enviar(self):
         move = self.make_move("fe", l10n_py_payment_type="4")
+        with self.assertRaisesRegex(UserError, "marca de la tarjeta"):
+            move.action_send_edi()
+        self.assertFalse(self.fake.calls_to("POST", ".*"))
+
+    def test_la_marca_otra_se_informa_como_otro(self):
+        move = self.make_move(
+            "fe", l10n_py_payment_type="4", l10n_py_sifende_tarjeta_marca="99"
+        )
         card = self.sent_payload(move)["pagos"][0]["tarjeta"]
         self.assertEqual(card["tipoTarjeta"], "OTRO")
         self.assertEqual(card["descripcionTipoTarjeta"], "Otro")

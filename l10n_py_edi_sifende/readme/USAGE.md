@@ -21,7 +21,8 @@
    emisión y los kilómetros del recorrido.
 5. Si una factura al contado se paga con *Cheque* (*Tipo de Pago* en la pestaña
    *Facturación electrónica*), complete el número del cheque (solo dígitos, hasta 8) y el banco
-   (de 4 a 20 caracteres): Sifende los exige. Con tarjeta, elija la *Marca de la tarjeta*.
+   (de 4 a 20 caracteres): Sifende los exige. Con tarjeta, la *Marca de la tarjeta* es
+   obligatoria (*Otra* si no figura en la lista).
 6. Si SIFEN rechaza un documento ya enviado (*Rechazado* con el CDC cargado), Sifende no
    permite reenviar ese número ni con los mismos datos, y **Reintentar** muestra el
    procedimiento en lugar de enviar. Con el rol *Contabilidad > Administrador*, abra
@@ -54,6 +55,16 @@
    *Número Desde* del timbrado al siguiente número libre del punto (panel de Sifende >
    Numeración) y pulse **Renumerar**: el documento toma el siguiente número libre, nunca uno que
    Sifende ya informó, y se envía de nuevo con **Enviar a EDI**.
+11. En una autofactura, el tipo y el número de la constancia de la sección *Autofactura* se
+   agregan solos como documento asociado al confirmar o enviar: no hace falta cargarlos otra vez
+   en *Documentos asociados*. Sifende recibe solo el tipo; el número y el código de control
+   quedan en Odoo.
+12. Todas las líneas del documento necesitan producto: Sifende toma de él el código y el NCM. En
+   una nota de remisión, el campo *Datos de transporte* ofrece solo los transportes sin
+   documento o del propio documento.
+13. El título del documento, el asunto del correo y el nombre del PDF muestran el tipo y el número
+   fiscal (por ejemplo, *Nota de Débito 001-001-0000101*). El número interno de Odoo
+   (*FE 00000027*) es la secuencia contable del diario y no se modifica.
 
 La vista previa del XML y del QR no está disponible: Sifende no genera documentos sin
 emitirlos.

@@ -13,6 +13,14 @@ class AccountMoveSend(models.AbstractModel):
         return attachments
 
     @api.model
+    def _get_default_mail_subject(self, move, mail_template, mail_lang):
+        subject = super()._get_default_mail_subject(move, mail_template, mail_lang)
+        fiscal = move.l10n_py_sifende_document_name
+        if subject and fiscal and move.name:
+            subject = subject.replace(move.name, fiscal)
+        return subject
+
+    @api.model
     def _link_invoice_documents(self, invoices_data):
         # account_edi_ubl_cii embeds a factur-x.xml in the PDF: the KuDE goes untouched
         for invoice, invoice_data in invoices_data.items():
