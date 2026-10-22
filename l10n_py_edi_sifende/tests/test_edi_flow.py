@@ -54,7 +54,7 @@ class TestEdiFlow(SifendeCommon):
         self.assertEqual(move.l10n_py_edi_status, "processing")
         self.assertEqual(move.l10n_py_cdc, CDC)
         self.assertEqual(move.l10n_py_qr_string, QR_URL)
-        self.assertEqual(move.l10n_py_edi_batch_id, CDC)
+        self.assertFalse(move.l10n_py_edi_batch_id)
         self.assertTrue(move.l10n_py_qr_code)
         self.assertFalse(move.l10n_py_kude_pdf)
         self.assertFalse(move.l10n_py_edi_xml)

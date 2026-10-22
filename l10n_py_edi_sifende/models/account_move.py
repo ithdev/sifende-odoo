@@ -551,6 +551,13 @@ class AccountMove(models.Model):
             and self._l10n_py_sifende_is_cash()
         ):
             errors.extend(self._l10n_py_sifende_cheque_errors())
+        if (
+            code == DOC_INVOICE
+            and self.l10n_py_payment_type in PAYMENT_CARDS
+            and not self.l10n_py_sifende_tarjeta_marca
+            and self._l10n_py_sifende_is_cash()
+        ):
+            errors.append(self.env._("Pago con tarjeta: elija la marca de la tarjeta."))
         if code in (DOC_CREDIT_NOTE, DOC_DEBIT_NOTE):
             if not self.l10n_py_sifende_motivo_emision:
                 errors.append(self.env._("Indique el motivo de emisión de la nota."))
@@ -575,6 +582,28 @@ class AccountMove(models.Model):
                     )
                 )
         return errors
+
+    def _validate_edi_data(self):
+        if self._l10n_py_sifende_connector():
+            self._l10n_py_sifende_check_products()
+        return super()._validate_edi_data()
+
+    def _l10n_py_sifende_check_products(self):
+        self.ensure_one()
+        lines = self.invoice_line_ids.filtered(
+            lambda line: line.display_type == "product" and not line.product_id
+        )
+        if lines:
+            raise UserError(
+                "\n".join(
+                    self.env._(
+                        'La línea "%(line)s" no tiene producto: elija uno, de él se '
+                        "toman el código y el NCM que SIFEN exige.",
+                        line=line.name or "",
+                    )
+                    for line in lines
+                )
+            )
 
     def _l10n_py_sifende_cheque_errors(self):
         number = self.l10n_py_sifende_cheque_numero or ""
@@ -729,7 +758,6 @@ class AccountMove(models.Model):
                 "l10n_py_qr_string": result.get("qr"),
                 "l10n_py_edi_status": "processing",
                 "l10n_py_sifende_envio_fallido": False,
-                "l10n_py_edi_batch_id": cdc,
                 "l10n_py_edi_message": self.env._(
                     "Enviado a Sifende; esperando la respuesta de SIFEN."
                 ),

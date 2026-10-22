@@ -141,6 +141,48 @@ class AccountMove(models.Model):
             "transportista": {key: value for key, value in carrier.items() if value},
         }
 
+    # === Constancia de la autofactura como documento asociado ===
+
+    def _l10n_py_sifende_link_origin_document(self):
+        result = super()._l10n_py_sifende_link_origin_document()
+        self._l10n_py_sifende_link_constancia()
+        return result
+
+    def _l10n_py_sifende_link_constancia(self):
+        for move in self:
+            if (
+                move.l10n_latam_document_type_id.code != DOC_SELF_INVOICE
+                or not (
+                    move.l10n_py_afe_constancia_type
+                    and move.l10n_py_afe_constancia_number
+                )
+                or move._l10n_py_sifende_frozen()
+            ):
+                continue
+            values = {
+                "constancia_type": move.l10n_py_afe_constancia_type,
+                "constancia_number": move.l10n_py_afe_constancia_number,
+            }
+            constancia = move.l10n_py_associated_document_ids.filtered(
+                lambda doc: doc.association_type == "3"
+            )[:1]
+            if not constancia:
+                self.env["l10n_py.associated.document"].sudo().create(
+                    {"move_id": move.id, "association_type": "3", **values}
+                )
+            elif any(constancia[key] != value for key, value in values.items()):
+                constancia.sudo().write(values)
+
+    def _validate_afe_data(self, docs):
+        errors = super()._validate_afe_data(docs)
+        if not docs and errors:
+            errors[0] = self.env._(
+                "Autofactura: falta la constancia electrónica como documento "
+                "asociado. Indique su tipo y número en la sección Autofactura, o "
+                "agréguela en Documentos Asociados."
+            )
+        return errors
+
     # === Validación previa al envío ===
 
     def _validate_edi_document_type(self):
