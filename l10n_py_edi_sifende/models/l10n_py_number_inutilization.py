@@ -1,9 +1,11 @@
-from odoo import api, models
+from odoo import api, fields, models
 from odoo.exceptions import ValidationError
 
 
 class NumberInutilization(models.Model):
     _inherit = "l10n_py.number.inutilization"
+
+    l10n_py_sifende_event_key = fields.Char(copy=False, readonly=True)
 
     def action_send(self):
         self.check_access("write")

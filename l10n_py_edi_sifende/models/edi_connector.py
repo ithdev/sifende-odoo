@@ -8,7 +8,7 @@ from urllib.parse import urlsplit
 import requests
 from requests.structures import CaseInsensitiveDict
 
-from odoo import api, fields, models
+from odoo import SUPERUSER_ID, api, fields, models
 from odoo.exceptions import AccessError, UserError, ValidationError
 
 from ..services.request_builder import SifendeRequestBuilder
@@ -18,6 +18,7 @@ _logger = logging.getLogger(__name__)
 DEFAULT_BASE_URL = "https://api.sifende.com.py"
 API_PREFIX = "/api/v1"
 PANEL_BILLING_URL = "https://app.sifende.com.py"
+DEFAULT_SERIES = "AA"
 USER_AGENT = "odoo-l10n_py_edi_sifende/19.0"
 
 ENUM_CACHE_TTL = 24 * 3600
@@ -29,6 +30,12 @@ KUDE_MAX_WAIT = 30
 KUDE_DEFAULT_POLL = 5
 TRANSIENT_STATUS = (429, 500, 502, 503, 504)
 TRANSIENT_SLUGS = ("idempotency-in-progress", "idempotency-upstream-unknown")
+SETUP_SLUGS = (
+    "configuracion-incompleta",
+    "timbrado-no-vigente",
+    "certificado-no-vigente",
+    "idempotency-key-reused",
+)
 
 APPROVED_STATES = ("APROBADO", "APROBADO_OBSERVACION")
 PENDING_STATES = ("PENDIENTE", "EN_LOTE")
@@ -421,12 +428,43 @@ class EDIConnector(models.Model):
                 detail=response.detail or "",
                 url=PANEL_BILLING_URL,
             )
+        elif slug in SETUP_SLUGS:
+            failure["error"] = self._sifende_setup_message(slug, response)
         elif response.status_code in (400, 422):
             failure["edi_status"] = "rejected"
             failure["error"] = self._sifende_failure_message(response)
         else:
             failure["error"] = self._sifende_failure_message(response)
         return failure
+
+    def _sifende_setup_message(self, slug, response):
+        url = PANEL_BILLING_URL
+        if slug == "configuracion-incompleta":
+            message = self.env._(
+                "Falta completar la configuración del contribuyente en Sifende "
+                "(dirección, actividad económica, certificado o CSC). Complétela en "
+                "el panel de Sifende (%(url)s) y pulse «Reintentar».",
+                url=url,
+            )
+        elif slug == "timbrado-no-vigente":
+            message = self.env._(
+                "El timbrado no está vigente en Sifende. Cárguelo o renuévelo en el "
+                "panel de Sifende (%(url)s) y pulse «Reintentar».",
+                url=url,
+            )
+        elif slug == "certificado-no-vigente":
+            message = self.env._(
+                "El certificado digital del contribuyente no está vigente en "
+                "Sifende. Cargue uno vigente en el panel de Sifende (%(url)s) y "
+                "pulse «Reintentar».",
+                url=url,
+            )
+        else:
+            message = self.env._(
+                "Sifende ya había recibido esta clave de envío con otros datos. "
+                "Pulse «Reintentar»: se enviará con una clave nueva."
+            )
+        return f"{message}\n{response.detail}" if response.detail else message
 
     def _sifende_number_conflict_message(self, response):
         body = response.body if isinstance(response.body, dict) else {}
@@ -479,11 +517,20 @@ class EDIConnector(models.Model):
         reason = (reason or self.env.context.get("l10n_py_cancel_motive") or "").strip()
         if len(reason) < 5:
             reason = self.env._("Cancelación solicitada desde Odoo")
+        move = (
+            self.env["account.move"]
+            .sudo()
+            .search(
+                [("l10n_py_cdc", "=", cdc), ("company_id", "=", self.company_id.id)],
+                limit=1,
+            )
+        )
         return self._sifende_event(
             "cancel",
             f"/documento-electronico/{cdc}/cancelar",
             {"motivo": reason[:500]},
             cdc,
+            record=move,
         )
 
     def _sifende_inutilize_range(self, data):
@@ -492,34 +539,36 @@ class EDIConnector(models.Model):
             timbrado = int(data["timbrado"])
         except (TypeError, ValueError) as e:
             raise UserError(self.env._("El timbrado debe ser numérico.")) from e
+        inutilization = self.env["l10n_py.number.inutilization"].browse(
+            self.env.context.get("l10n_py_inutilization_id")
+        )
+        authorization = inutilization.authorization_id
+        code = authorization.l10n_latam_document_type_id.code
         payload = {
             "numeroTimbrado": timbrado,
             "establecimiento": data["establecimiento"],
             "puntoExpedicion": data["punto"],
             "numeroInicio": data["numeroDesde"],
             "numeroFin": data["numeroHasta"],
-            "tipoDocumento": self._sifende_inutilization_document_type(data),
+            "tipoDocumento": int(code or data["tipoDocumento"]),
             "motivo": (data.get("motivo") or "").strip()[:500],
         }
+        # OCA propone «AA» en todo timbrado y no lo muestra: no es una serie real
+        if authorization.series and authorization.series != DEFAULT_SERIES:
+            payload["serie"] = authorization.series
         return self._sifende_event(
-            "event", "/documento-electronico/inutilizar", payload
+            "event", "/documento-electronico/inutilizar", payload, record=inutilization
         )
 
-    def _sifende_inutilization_document_type(self, data):
-        inutilization = self.env["l10n_py.number.inutilization"].browse(
-            self.env.context.get("l10n_py_inutilization_id")
-        )
-        code = inutilization.authorization_id.l10n_latam_document_type_id.code
-        return int(code or data["tipoDocumento"])
-
-    def _sifende_event(self, operation, path, payload, cdc=None):
+    def _sifende_event(self, operation, path, payload, cdc=None, record=None):
+        key = self._sifende_event_key(record)
         try:
             response = self._sifende_call(
                 "POST",
                 path,
                 operation=operation,
                 json_body=payload,
-                idempotency_key=str(uuid.uuid4()),
+                idempotency_key=key,
                 retries=len(RETRY_BACKOFF),
                 cdc=cdc,
             )
@@ -527,7 +576,10 @@ class EDIConnector(models.Model):
             return {"success": False, "error": str(e)}
         body = response.body if isinstance(response.body, dict) else {}
         if response.ok and body.get("estadoEvento") != "RECHAZADO":
+            self._sifende_forget_event_key(record, committed=False)
             return {"success": True, "result": body}
+        if self._sifende_is_definitive(response):
+            self._sifende_forget_event_key(record, committed=True)
         if response.ok:
             return {
                 "success": False,
@@ -536,6 +588,39 @@ class EDIConnector(models.Model):
                 or self.env._("SIFEN rechazó el evento."),
             }
         return {"success": False, "error": self._sifende_failure_message(response)}
+
+    @staticmethod
+    def _sifende_is_definitive(response):
+        # un fallo transitorio o un evento ya pendiente se retoma con la misma clave
+        return not (
+            response.status_code in TRANSIENT_STATUS
+            or response.status_code == 409
+            or response.slug in TRANSIENT_SLUGS
+        )
+
+    def _sifende_event_key(self, record):
+        # otro cursor: el rollback del error que ve el usuario no puede perderla
+        if not record:
+            return str(uuid.uuid4())
+        key = record.sudo().l10n_py_sifende_event_key
+        if not key:
+            key = str(uuid.uuid4())
+            self._sifende_write_event_key(record, key, committed=True)
+        return key
+
+    def _sifende_forget_event_key(self, record, committed):
+        if record and record.sudo().l10n_py_sifende_event_key:
+            self._sifende_write_event_key(record, False, committed)
+
+    def _sifende_write_event_key(self, record, key, committed):
+        values = {"l10n_py_sifende_event_key": key}
+        if not committed:
+            record.sudo().write(values)
+            return
+        with self.pool.cursor() as cr:
+            env = api.Environment(cr, SUPERUSER_ID, {})
+            env[record._name].browse(record.id).write(values)
+        record.invalidate_recordset(list(values))
 
     def _sifende_test_connection(self):
         self.ensure_one()
@@ -596,11 +681,12 @@ class EDIConnector(models.Model):
             if taxpayer.get("ambiente") == "SANDBOX"
             else (taxpayer.get("timbrado") or {}).get("numero")
         )
-        points = {
-            (est["numeroEstablecimiento"], point["puntoExpedicion"])
-            for est in taxpayer.get("establecimientos") or []
-            for point in est.get("puntosExpedicion") or []
-        }
+        points = {}
+        for est in taxpayer.get("establecimientos") or []:
+            for point in est.get("puntosExpedicion") or []:
+                points[(est["numeroEstablecimiento"], point["puntoExpedicion"])] = (
+                    est.get("activo") is not False and point.get("activo") is not False
+                )
         authorizations = (
             self.env["account.authorization"]
             .sudo()
@@ -628,7 +714,18 @@ class EDIConnector(models.Model):
                 key = (int(auth.establishment), int(auth.expedition_point))
             except (TypeError, ValueError):
                 continue
-            if points and key not in points:
+            if key in points and not points[key]:
+                warnings.append(
+                    self.env._(
+                        "El establecimiento %(est)s / punto %(point)s del timbrado "
+                        "%(stamp)s está inactivo en SIFENDE: actívelo en el panel de "
+                        "Sifende.",
+                        est=auth.establishment,
+                        point=auth.expedition_point,
+                        stamp=auth.name,
+                    )
+                )
+            elif points and key not in points:
                 warnings.append(
                     self.env._(
                         "El establecimiento %(est)s / punto %(point)s del timbrado "
@@ -656,6 +753,13 @@ class EDIConnector(models.Model):
         existing = self._sifende_find_webhook(url)
         if existing:
             self.sudo().sifende_webhook_id = existing["id"]
+            if existing.get("activo") is False:
+                message = self.env._(
+                    "El webhook está desactivado en Sifende y no avisará a Odoo. "
+                    "Actívelo en el panel de Sifende, o pulse «Quitar webhook» y "
+                    "regístrelo de nuevo."
+                )
+                return self._sifende_notify(message, "warning")
             if self.sudo().sifende_webhook_secret:
                 message = self.env._("El webhook ya está registrado en Sifende.")
             else:

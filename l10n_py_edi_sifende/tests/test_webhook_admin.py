@@ -115,6 +115,20 @@ class TestWebhookAdmin(SifendeCommon):
         self.assertEqual(self.connector.sifende_webhook_secret, SECRET)
         self.assertFalse(self.fake.calls_to("POST", r"^/contribuyente/webhooks$"))
 
+    def test_registrar_avisa_si_el_webhook_esta_desactivado_en_sifende(self):
+        self.registered()
+        self.fake.add(
+            "GET",
+            r"^/contribuyente/webhooks$",
+            FakeResponse(200, [{**endpoint(url=self.url), "activo": False}]),
+        )
+        params = self.notification(self.connector.action_sifende_register_webhook())
+        self.assertEqual(params["type"], "warning")
+        self.assertTrue(params["sticky"])
+        self.assertIn("desactivado", params["message"])
+        self.assertNotIn("ya está registrado", params["message"])
+        self.assertFalse(self.fake.calls_to("POST", r"^/contribuyente/webhooks$"))
+
     def test_registrar_muestra_el_error_de_la_api(self):
         self.fake.add(
             "POST",

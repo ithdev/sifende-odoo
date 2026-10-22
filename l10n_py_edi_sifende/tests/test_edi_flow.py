@@ -390,6 +390,26 @@ class TestEdiFlow(SifendeCommon):
         self.assertIn("timbrado", move.l10n_py_edi_message.lower())
         self.assertIn("87654321", move.l10n_py_edi_message)
 
+    def test_los_errores_de_configuracion_de_sifende_no_son_un_rechazo(self):
+        for slug, hint in (
+            ("configuracion-incompleta", "configuración del contribuyente"),
+            ("timbrado-no-vigente", "timbrado no está vigente"),
+            ("certificado-no-vigente", "certificado digital"),
+            ("idempotency-key-reused", "clave nueva"),
+        ):
+            with self.subTest(slug=slug):
+                move = self.make_move("fe")
+                self.route_emission(
+                    problem(slug, 422, "Detalle de Sifende"), self.emission_response()
+                )
+                move.action_send_edi()
+                self.assertEqual(move.l10n_py_edi_status, "error")
+                self.assertIn(hint, move.l10n_py_edi_message)
+                self.assertIn("Detalle de Sifende", move.l10n_py_edi_message)
+                move.action_retry_edi()
+                self.assertEqual(move.l10n_py_edi_status, "processing")
+                self.assertEqual(move.l10n_py_sifende_intento, 1)
+
     def test_numero_de_un_rechazado_requiere_inutilizar(self):
         move = self.make_move("fe")
         self.route_emission(problem("document-number-requires-voiding", 422))

@@ -73,6 +73,22 @@ class TestConnector(SifendeCommon):
         message = self.message(self.connector.test_connection())["message"]
         self.assertIn("establecimiento 002 / punto 003", message)
 
+    def test_test_connection_advierte_un_punto_inactivo(self):
+        establishment = taxpayer().json()["establecimientos"][0]
+        establishment["puntosExpedicion"][0]["activo"] = False
+        self.route_taxpayer(taxpayer(establecimientos=[establishment]))
+        message = self.message(self.connector.test_connection())["message"]
+        self.assertIn("establecimiento 001 / punto 001", message)
+        self.assertIn("inactivo en SIFENDE", message)
+        self.assertNotIn("no existe", message)
+
+    def test_test_connection_advierte_un_establecimiento_inactivo(self):
+        establishment = taxpayer().json()["establecimientos"][0]
+        establishment["activo"] = False
+        self.route_taxpayer(taxpayer(establecimientos=[establishment]))
+        message = self.message(self.connector.test_connection())["message"]
+        self.assertIn("inactivo en SIFENDE", message)
+
     def test_test_connection_avisa_si_no_esta_listo_para_emitir(self):
         self.route_taxpayer(taxpayer(estadoConfiguracion={"listoParaEmitir": False}))
         params = self.message(self.connector.test_connection())

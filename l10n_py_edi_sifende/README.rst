@@ -211,6 +211,17 @@ Usage
     001-001-0000101*). El número interno de Odoo (*FE 00000027*) es la
     secuencia contable del diario y no se modifica.
 
+14. Si Sifende responde que falta configuración (datos del
+    contribuyente, timbrado o certificado sin vigencia), el documento
+    queda en *Error*, no en *Rechazado*: el mensaje indica qué corregir
+    en el panel de Sifende; luego pulse **Reintentar**.
+
+15. Si Sifende no responde al cancelar un documento o al enviar una
+    inutilización, vuelva a intentarlo: Odoo reutiliza la misma
+    solicitud y no se duplica el evento. *Probar conexión* avisa de los
+    puntos de expedición inactivos, y *Registrar webhook*, de un webhook
+    desactivado en Sifende.
+
 La vista previa del XML y del QR no está disponible: Sifende no genera
 documentos sin emitirlos.
 

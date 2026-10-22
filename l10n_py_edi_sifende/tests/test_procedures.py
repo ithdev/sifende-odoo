@@ -4,7 +4,7 @@ from odoo import fields
 from odoo.exceptions import UserError, ValidationError
 from odoo.tests import tagged
 
-from .common import CDC, FakeResponse, SifendeCommon
+from .common import CDC, FakeResponse, SifendeCommon, problem
 
 EVENT_OK = FakeResponse(200, {"estadoEvento": "APROBADO"})
 
@@ -149,3 +149,88 @@ class TestProcedures(SifendeCommon):
         self.assertEqual(rejected.state, "cancel")
         replacement = self.make_move("fe")
         self.assertEqual(replacement.l10n_py_invoice_number, number + 1)
+
+    # === Clave de idempotencia de los eventos ===
+
+    def fails(self, method):
+        # sin assertRaises: su savepoint desharía la clave confirmada aparte
+        try:
+            method()
+        except UserError:
+            return
+        self.fail("Se esperaba un UserError")
+
+    def event_keys(self, pattern):
+        return [
+            c.headers["Idempotency-Key"] for c in self.fake.calls_to("POST", pattern)
+        ]
+
+    def test_reintentar_la_cancelacion_tras_un_503_usa_la_misma_clave(self):
+        move = self.accepted_move()
+        self.fake.add(
+            "POST", "/cancelar$", problem("idempotency-upstream-unknown", 503)
+        )
+        for _ in range(2):
+            self.fails(move.action_cancel_edi)
+        keys = self.event_keys("/cancelar$")
+        self.assertEqual(len(keys), 6)
+        self.assertEqual(len(set(keys)), 1)
+        self.assertEqual(move.l10n_py_sifende_event_key, keys[0])
+        self.fake.add("POST", "/cancelar$", EVENT_OK)
+        move.action_cancel_edi()
+        self.assertEqual(self.event_keys("/cancelar$")[-1], keys[0])
+        self.assertFalse(move.l10n_py_sifende_event_key)
+
+    def test_una_cancelacion_rechazada_por_la_api_usa_clave_nueva_al_reintentar(self):
+        move = self.accepted_move()
+        self.fake.add("POST", "/cancelar$", problem("validation-error", 400, "Plazo"))
+        with self.assertRaises(UserError):
+            move.action_cancel_edi()
+        self.assertFalse(move.l10n_py_sifende_event_key)
+        self.fake.add("POST", "/cancelar$", EVENT_OK)
+        move.action_cancel_edi()
+        first, second = self.event_keys("/cancelar$")
+        self.assertNotEqual(first, second)
+
+    def test_reintentar_la_inutilizacion_tras_un_503_usa_la_misma_clave(self):
+        inutilization = self.inutilization(
+            self.make_move("fe").l10n_py_invoice_number + 5
+        )
+        self.fake.add(
+            "POST", "/inutilizar$", problem("idempotency-upstream-unknown", 503)
+        )
+        for _ in range(2):
+            self.fails(inutilization.action_send)
+            inutilization.state = "draft"
+        self.assertEqual(len(set(self.event_keys("/inutilizar$"))), 1)
+        self.fake.add("POST", "/inutilizar$", EVENT_OK)
+        inutilization.action_send()
+        self.assertEqual(inutilization.state, "accepted")
+        self.assertFalse(inutilization.l10n_py_sifende_event_key)
+
+    def test_una_inutilizacion_rechazada_por_la_api_muestra_su_mensaje(self):
+        inutilization = self.inutilization(5)
+        self.fake.add(
+            "POST",
+            "/inutilizar$",
+            problem(
+                "evento-inutilizacion-error",
+                400,
+                "El número fin debe ser mayor al número inicio (código SIFEN 4068)",
+            ),
+        )
+        with self.assertRaisesRegex(UserError, "debe ser mayor al número inicio"):
+            inutilization.action_send()
+        self.assertFalse(inutilization.l10n_py_sifende_event_key)
+
+    def test_la_inutilizacion_envia_la_serie_del_timbrado(self):
+        inutilization = self.inutilization(5)
+        self.fake.add("POST", "/inutilizar$", EVENT_OK)
+        inutilization.action_send()
+        self.assertNotIn("serie", self.fake.calls_to("POST", "/inutilizar$")[0].json)
+        inutilization = self.inutilization(6)
+        inutilization.authorization_id.series = "AB"
+        inutilization.action_send()
+        self.assertEqual(
+            self.fake.calls_to("POST", "/inutilizar$")[1].json["serie"], "AB"
+        )
