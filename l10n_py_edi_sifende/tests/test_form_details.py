@@ -231,6 +231,15 @@ class TestAttachments(SifendeCommon):
         self.assertEqual(files[f"KUDE_{CDC}.pdf"].mimetype, "application/pdf")
         self.assertEqual(base64.b64decode(move.l10n_py_edi_xml), XML)
 
+    def test_los_adjuntos_del_webhook_conservan_el_mimetype_del_xml(self):
+        move = self.make_move("fe")
+        public = self.env.ref("base.public_user")
+        move.with_user(public).sudo()._l10n_py_sifende_attach(
+            f"{CDC}.xml", XML, "application/xml"
+        )
+        files = {att.name: att for att in self.attachments(move)}
+        self.assertEqual(files[f"{CDC}.xml"].mimetype, "application/xml")
+
     def test_los_adjuntos_no_se_duplican(self):
         move = self.accepted()
         move._l10n_py_sifende_attach(f"{CDC}.xml", XML, "application/xml")

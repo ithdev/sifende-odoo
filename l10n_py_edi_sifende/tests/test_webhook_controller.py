@@ -118,6 +118,12 @@ class TestWebhookController(SifendeCommon, HttpCase):
         self.assertEqual(move.l10n_py_edi_status, "accepted")
         self.assertEqual(base64.b64decode(move.l10n_py_edi_xml), XML)
         self.assertEqual(base64.b64decode(move.l10n_py_kude_pdf), PDF)
+        mimetypes = self.env["ir.attachment"].search(
+            [("res_model", "=", "account.move"), ("res_id", "=", move.id)]
+        )
+        self.assertEqual(
+            {a.name: a.mimetype for a in mimetypes}[f"{CDC}.xml"], "application/xml"
+        )
         self.assertFalse(move.l10n_py_sifende_archivos_pendientes)
         self.assertEqual(len(self.fake.calls_to("GET", "/status/")), 1)
 

@@ -1,7 +1,7 @@
 # pylint: disable=consider-merging-classes-inherited
 import base64
 
-from odoo import api, fields, models
+from odoo import SUPERUSER_ID, api, fields, models
 from odoo.exceptions import UserError
 
 SALE_MOVE_TYPES = ("out_invoice", "out_refund")
@@ -108,7 +108,7 @@ class AccountMove(models.Model):
         self.ensure_one()
         attachment = (
             self.env["ir.attachment"]
-            .sudo()
+            .with_user(SUPERUSER_ID)
             .search(
                 [
                     ("res_model", "=", "account.move"),
