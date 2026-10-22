@@ -215,6 +215,20 @@ class AccountMove(models.Model):
             move.l10n_py_authorization_id = current
 
     def action_post(self):
+        for move in self:
+            if (
+                move.l10n_py_edi_status == "cancelled"
+                and move.l10n_py_cdc
+                and move._l10n_py_sifende_connector()
+            ):
+                raise UserError(
+                    self.env._(
+                        "El documento %(name)s fue cancelado en SIFEN y su número "
+                        "no se reutiliza. Cancele este asiento en Odoo y emita un "
+                        "documento nuevo.",
+                        name=move.l10n_py_cdc,
+                    )
+                )
         self._l10n_py_sifende_assign_number()
         res = super().action_post()
         self._l10n_py_sifende_link_origin_document()
@@ -305,8 +319,17 @@ class AccountMove(models.Model):
             and self._l10n_py_sifende_connector()
         )
 
-    def _l10n_py_sifende_frozen_error(self, fiscal=False):
+    def _l10n_py_sifende_frozen_error(self, fiscal=False, amounts=False):
         name = self.l10n_py_cdc or self.name
+        if amounts:
+            return UserError(
+                self.env._(
+                    "Los importes y los datos de pago de un documento enviado a "
+                    "Sifende no se pueden modificar: SIFEN ya tiene los del "
+                    "documento %(name)s.",
+                    name=name,
+                )
+            )
         if fiscal:
             return UserError(
                 self.env._(
@@ -322,6 +345,34 @@ class AccountMove(models.Model):
                 name=name,
             )
         )
+
+    def _l10n_py_sifende_with_sifen(self):
+        self.ensure_one()
+        return bool(
+            self.l10n_py_edi_status in ("sent", "processing", "accepted")
+            and self._l10n_py_sifende_connector()
+        )
+
+    @api.depends("l10n_py_edi_status")
+    def _compute_show_reset_to_draft_button(self):
+        res = super()._compute_show_reset_to_draft_button()
+        for move in self:
+            if move.show_reset_to_draft_button and move._l10n_py_sifende_with_sifen():
+                move.show_reset_to_draft_button = False
+        return res
+
+    def button_draft(self):
+        for move in self:
+            if move._l10n_py_sifende_with_sifen():
+                raise UserError(
+                    self.env._(
+                        "El documento %(name)s ya fue enviado a Sifende y no se "
+                        "puede restablecer a borrador. Cancélelo con «Cancelar EDI» "
+                        "o anúlelo con una nota de crédito.",
+                        name=move.l10n_py_cdc or move.name,
+                    )
+                )
+        return super().button_draft()
 
     def write(self, vals):
         changed = [
