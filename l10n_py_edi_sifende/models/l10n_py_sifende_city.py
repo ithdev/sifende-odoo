@@ -82,19 +82,32 @@ class SifendeCity(models.Model):
 
     @api.model
     def _sifende_resolve_name(self, state, city_name):
-        # vacío si no hay una única ciudad que corresponda
+        # vacío si no hay una única ciudad; sin departamento busca en todo el país
         department = self._sifende_department_code(state)
         target = normalize(city_name)
-        if not department or not target:
+        if not target or (state and not department):
             return self.browse()
-        cities = self.search([("department_code", "=", department)])
+        cities = self.search(
+            [("department_code", "=", department)] if department else []
+        )
         matches = cities.filtered(lambda city: normalize(city.name) == target)
         if len(matches) > 1:
             head = matches.filtered(
                 lambda city: normalize(city.district_name) == target
             )
             matches = head or matches
-        if len(set(matches.mapped("district_code"))) > 1:
+        if (
+            len(
+                set(
+                    zip(
+                        matches.mapped("department_code"),
+                        matches.mapped("district_code"),
+                        strict=False,
+                    )
+                )
+            )
+            > 1
+        ):
             return self.browse()
         return matches[:1]
 

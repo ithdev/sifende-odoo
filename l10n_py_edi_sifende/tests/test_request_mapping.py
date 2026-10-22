@@ -55,6 +55,47 @@ class TestRequestMapping(SifendeCommon):
         self.assertEqual(receptor["ciudad"], "Ciudad Inventada")
         self.assertNotIn("codigoDistrito", receptor)
 
+    def test_receptor_sin_departamento_toma_la_ciudad_del_catalogo_por_nombre(self):
+        self.partner.write({"state_id": False, "city_id": False, "city": "Lambaré"})
+        receptor = self.sent_payload(self.make_move("fe"))["receptor"]
+        self.assertEqual(receptor["departamento"], "CENTRAL")
+        self.assertEqual(receptor["ciudad"], "6106")
+        self.assertEqual(receptor["codigoDistrito"], 169)
+        self.assertIn("direccion", receptor)
+
+    def test_receptor_sin_departamento_con_ciudad_sifende_manda_toda_la_ubicacion(self):
+        self.partner.write(
+            {
+                "state_id": False,
+                "city_id": False,
+                "city": False,
+                "l10n_py_sifende_city_id": self.city_sifende.id,
+            }
+        )
+        receptor = self.sent_payload(self.make_move("fe"))["receptor"]
+        self.assertEqual(receptor["ciudad"], "6106")
+        self.assertEqual(receptor["departamento"], "CENTRAL")
+        self.assertIn("direccion", receptor)
+
+    def test_receptor_sin_ubicacion_se_envia_sin_direccion(self):
+        self.partner.write(
+            {"state_id": False, "city_id": False, "city": "Ciudad Inventada"}
+        )
+        receptor = self.sent_payload(self.make_move("fe"))["receptor"]
+        for key in ("direccion", "numeroCasa", "departamento", "ciudad"):
+            self.assertNotIn(key, receptor)
+
+    def test_receptor_sin_calle_se_envia_sin_direccion_ni_relleno(self):
+        self.partner.street = False
+        move = self.make_move("fe")
+        data = move._prepare_edi_document_data()
+        self.assertEqual(data["cliente"]["direccion"], "N/A")
+        builder = SifendeRequestBuilder(self.env, self.connector._sifende_enum_name)
+        receptor = builder.build(data)["receptor"]
+        for key in ("direccion", "numeroCasa"):
+            self.assertNotIn(key, receptor)
+        self.assertEqual(receptor["ciudad"], "6106")
+
     def test_receptor_con_ciudad_sifende_elegida_manda_esa(self):
         self.partner.write(
             {

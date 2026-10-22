@@ -556,6 +556,10 @@ inutilización, vuelva a intentarlo: Odoo reutiliza la misma
 solicitud y no se duplica el evento. <em>Probar conexión</em> avisa de los
 puntos de expedición inactivos, y <em>Registrar webhook</em>, de un webhook
 desactivado en Sifende.</li>
+<li>Si el contacto no tiene departamento ni una ciudad que Sifende
+reconozca, la factura y las notas se emiten sin la dirección del
+receptor, porque SIFEN la rechaza sin ciudad. La nota de remisión sí
+la exige: elija la <em>Ciudad SIFEN</em> en el contacto.</li>
 </ol>
 <p>La vista previa del XML y del QR no está disponible: Sifende no genera
 documentos sin emitirlos.</p>
