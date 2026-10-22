@@ -1,5 +1,6 @@
 from lxml import etree
 
+from odoo import fields
 from odoo.exceptions import UserError, ValidationError
 from odoo.tests import tagged
 
@@ -29,7 +30,7 @@ class TestProcedures(SifendeCommon):
         )
 
     def accepted_move(self):
-        move = self.make_move("fe")
+        move = self.make_move("fe", invoice_date=fields.Date.today())
         move.write({"l10n_py_edi_status": "accepted", "l10n_py_cdc": CDC})
         return move
 
