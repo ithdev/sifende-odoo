@@ -275,6 +275,7 @@ class TestSecurity(SifendeCommon):
         connector = (
             self.env["l10n_py.edi.connector"]
             .with_user(manager)
+            .with_context(allowed_company_ids=self.other_company.ids)
             .create(
                 {
                     "name": "Nuevo",

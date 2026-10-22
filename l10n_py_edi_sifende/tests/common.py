@@ -99,17 +99,22 @@ class SifendeCommon(TransactionCase):
         super().setUpClass()
         cls.env = cls.env(context=dict(cls.env.context, tracking_disable=True))
         cls.enums_fixture = json.loads((FIXTURES / "enums.json").read_text())
-        cls.company = cls.env.ref("base.main_company")
         cls.country_py = cls.env.ref("base.py")
         pyg = cls.env.ref("base.PYG")
         pyg.active = True
-        cls.company.write(
+        cls.company = cls.env["res.company"].create(
             {
+                "name": "Empresa Paraguaya Test",
                 "country_id": cls.country_py.id,
-                "account_fiscal_country_id": cls.country_py.id,
                 "currency_id": pyg.id,
                 "l10n_py_ruc": "80009401",
             }
+        )
+        cls.env.user.write(
+            {"company_ids": [(4, cls.company.id)], "company_id": cls.company.id}
+        )
+        cls.env = cls.env(
+            context=dict(cls.env.context, allowed_company_ids=cls.company.ids)
         )
         cls._setup_accounts()
         cls._setup_taxes()
@@ -263,10 +268,6 @@ class SifendeCommon(TransactionCase):
             "af": "l10n_py_account.dc_py_af",
         }
         cls.doc_types, cls.auths, cls.journals = {}, {}, {}
-        # Demo data ships its own timbrados; Probar conexión would compare them too.
-        cls.env["account.authorization"].search(
-            [("company_id", "=", cls.company.id)]
-        ).active = False
         for key, xmlid in doc_types.items():
             cls.doc_types[key] = cls.env.ref(xmlid)
             cls.auths[key] = cls.env["account.authorization"].create(
