@@ -255,6 +255,7 @@ class TestRequestMapping(SifendeCommon):
     def test_autofactura(self):
         move = self.make_move(
             "af",
+            lines=[self.line(tax=self.tax_exempt)],
             l10n_py_afe_constancia_type="1",
             l10n_py_afe_constancia_number="CONST-1",
             l10n_py_afe_constancia_control="CTRL-1",

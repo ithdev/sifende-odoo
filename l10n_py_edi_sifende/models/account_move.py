@@ -591,18 +591,25 @@ class AccountMove(models.Model):
 
     def _l10n_py_sifende_check_products(self):
         self.ensure_one()
-        lines = self.invoice_line_ids.filtered(
-            lambda line: line.display_type == "product" and not line.product_id
+        product_lines = self.invoice_line_ids.filtered(
+            lambda line: line.display_type == "product"
         )
-        if lines:
+        missing = [
+            (position, line)
+            for position, line in enumerate(product_lines, 1)
+            if not line.product_id
+        ]
+        if missing:
             raise UserError(
                 "\n".join(
                     self.env._(
-                        'La línea "%(line)s" no tiene producto: elija uno, de él se '
+                        "La línea %(line)s no tiene producto: elija uno, de él se "
                         "toman el código y el NCM que SIFEN exige.",
-                        line=line.name or "",
+                        line=f'"{line.name}"'
+                        if line.name
+                        else self.env._("n.º %(position)s", position=position),
                     )
-                    for line in lines
+                    for position, line in missing
                 )
             )
 

@@ -279,6 +279,7 @@ class TestRemisionYAutofactura(SifendeCommon):
         }
 
     def make_afe(self, **vals):
+        vals.setdefault("lines", [self.line(tax=self.tax_exempt)])
         return self.make_move("af", **self.afe_vals(**vals))
 
     def constancias(self, move):
@@ -310,6 +311,46 @@ class TestRemisionYAutofactura(SifendeCommon):
         self.assertIn("falta la constancia electrónica", message)
         self.assertIn("sección Autofactura", message)
         self.assertNotIn("exactamente 1", message)
+
+    def test_una_autofactura_con_iva_dice_que_lineas_deben_ser_exentas(self):
+        move = self.make_afe(
+            lines=[
+                self.line(name="Resma", tax=self.tax_10),
+                self.line(name="Cuaderno", tax=self.tax_exempt),
+                self.line(name="Lápiz", tax=self.tax_5),
+            ]
+        )
+        message = self.errors(move)
+        self.assertIn(
+            'Autofactura: los ítems deben ser exentos de IVA; la línea "Resma" '
+            "tiene IVA 10%",
+            message,
+        )
+        self.assertIn('la línea "Lápiz" tiene IVA 5%', message)
+        self.assertNotIn("Cuaderno", message)
+        self.assertFalse(self.fake.calls_to("POST", ".*"))
+
+    def test_una_autofactura_con_microproductor_se_frena_antes_de_enviar(self):
+        move = self.make_afe(
+            l10n_py_afe_constancia_type="2",
+            l10n_py_sifende_afe_vendor_city_id=self.city_sifende.id,
+            l10n_py_sifende_afe_provision_city_id=self.city_sifende.id,
+        )
+        self.assertIn(
+            "Autofactura: sólo se admite la constancia de no contribuyente, no "
+            "«Microproductor»",
+            self.errors(move),
+        )
+        self.assertFalse(self.fake.calls_to("POST", ".*"))
+
+    def test_una_autofactura_exenta_con_constancia_de_no_contribuyente_no_se_frena(
+        self,
+    ):
+        move = self.make_afe(
+            l10n_py_sifende_afe_vendor_city_id=self.city_sifende.id,
+            l10n_py_sifende_afe_provision_city_id=self.city_sifende.id,
+        )
+        self.assertEqual(move._l10n_py_sifende_autofactura_errors(), [])
 
     def test_una_autofactura_en_una_ciudad_cuyo_codigo_de_oca_difiere(self):
         self.assertNotEqual(self.city_code, str(self.city_sifende.code))

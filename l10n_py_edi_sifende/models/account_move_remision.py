@@ -443,6 +443,31 @@ class AccountMove(models.Model):
         def add(text):
             errors.append(f"{label}: {text}")
 
+        constancia_type = self.l10n_py_afe_constancia_type
+        if constancia_type and constancia_type != "1":
+            add(
+                self.env._(
+                    "sólo se admite la constancia de no contribuyente, no «%(type)s».",
+                    type=dict(
+                        self._fields[
+                            "l10n_py_afe_constancia_type"
+                        ]._description_selection(self.env)
+                    ).get(constancia_type),
+                )
+            )
+        for line in self.invoice_line_ids.filtered(
+            lambda line: line.display_type == "product"
+        ):
+            rates = sorted({tax.amount for tax in line.tax_ids if tax.amount})
+            if rates:
+                add(
+                    self.env._(
+                        'los ítems deben ser exentos de IVA; la línea "%(line)s" '
+                        "tiene IVA %(rates)s.",
+                        line=line.name or line.product_id.display_name,
+                        rates=", ".join(f"{rate:g}%" for rate in rates),
+                    )
+                )
         if self.l10n_py_afe_vendor_doc_type != "1":
             add(self.env._("el vendedor debe identificarse con cédula paraguaya."))
         if not _digits(self.l10n_py_afe_vendor_doc_number, 5, 12):

@@ -236,6 +236,22 @@ class TestChequeAndCard(SifendeCommon):
         self.assertNotIn("código NCM", str(error.exception))
         self.assertFalse(self.fake.calls_to("POST", ".*"))
 
+    def test_una_linea_sin_producto_ni_descripcion_se_nombra_por_su_posicion(self):
+        move = self.make_move(
+            "fe",
+            lines=[
+                self.line(),
+                self.line(),
+                self.line(product_id=False, name=False),
+            ],
+        )
+        with self.assertRaisesRegex(
+            UserError, "La línea n.º 3 no tiene producto"
+        ) as error:
+            move.action_send_edi()
+        self.assertNotIn('""', str(error.exception))
+        self.assertFalse(self.fake.calls_to("POST", ".*"))
+
     def test_una_tarjeta_sin_marca_se_frena_antes_de_enviar(self):
         move = self.make_move("fe", l10n_py_payment_type="4")
         with self.assertRaisesRegex(UserError, "marca de la tarjeta"):
