@@ -3,6 +3,7 @@ from decimal import ROUND_HALF_UP, Decimal
 
 from odoo.exceptions import UserError
 
+PLACEHOLDER_ADDRESS = "N/A"
 PYG = "PYG"
 
 # l10n_py_doc_type de OCA (1 CI, 2 pasaporte, 3 carnet, 4 innominado) -> tiTipDocRec
@@ -176,16 +177,19 @@ class SifendeRequestBuilder:
             result["ncm"] = ncm
         return result
 
-    def _receptor(self, data, extra):
+    def _receptor(self, data, extra, address_required=False):
         customer = data["cliente"]
         extra_customer = extra.get("cliente") or {}
         nature = int(customer["naturalezaReceptor"])
         operation = int(customer["tipoOperacion"])
+        address = (customer.get("direccion") or "").strip()
+        if address.upper() == PLACEHOLDER_ADDRESS:
+            address = ""
         receptor = {
             "tipoContribuyente": self._name("naturalezaReceptor", nature),
             "tipoOperacion": self._name("tipoOperacion", operation),
             "nombreRazonSocial": customer["razonSocial"],
-            "direccion": (customer.get("direccion") or "")[:255],
+            "direccion": address[:255],
             "numeroCasa": self._int(
                 customer.get("numeroCasa") or 0, "El número de casa"
             ),
@@ -213,26 +217,43 @@ class SifendeRequestBuilder:
         client_code = extra_customer.get("codigoCliente")
         if client_code and 3 <= len(client_code) <= 15:
             receptor["codigoCliente"] = client_code
-        if customer.get("departamento") and operation != 4:
-            geography = extra_customer.get("geografia")
-            if geography:
-                receptor["departamento"] = self._name(
-                    "departamento", geography["departamento"]
-                )
-                receptor["codigoDistrito"] = geography["distrito"]
-                receptor["ciudad"] = str(geography["ciudad"])
-            else:
-                city = (
-                    extra_customer.get("ciudad")
-                    or customer.get("ciudadDescripcion")
-                    or customer.get("ciudad")
-                )
-                if city:
-                    receptor["departamento"] = self._name(
-                        "departamento", customer["departamento"]
+        if operation != 4:
+            self._receptor_location(receptor, customer, extra_customer)
+            if not (
+                address and receptor.get("departamento") and receptor.get("ciudad")
+            ):
+                if address_required:
+                    raise UserError(
+                        self.env._(
+                            "El receptor necesita dirección, departamento y ciudad: "
+                            "complete la dirección e indique la «Ciudad SIFEN» en el "
+                            "contacto."
+                        )
                     )
-                    receptor["ciudad"] = str(city)
+                # SIFEN rechaza la dirección sin departamento ni ciudad (1324, 1327)
+                receptor.pop("direccion", None)
+                receptor.pop("numeroCasa", None)
         return receptor
+
+    def _receptor_location(self, receptor, customer, extra_customer):
+        geography = extra_customer.get("geografia")
+        if geography:
+            receptor["departamento"] = self._name(
+                "departamento", geography["departamento"]
+            )
+            receptor["codigoDistrito"] = geography["distrito"]
+            receptor["ciudad"] = str(geography["ciudad"])
+        elif customer.get("departamento"):
+            city = (
+                extra_customer.get("ciudad")
+                or customer.get("ciudadDescripcion")
+                or customer.get("ciudad")
+            )
+            if city:
+                receptor["departamento"] = self._name(
+                    "departamento", customer["departamento"]
+                )
+                receptor["ciudad"] = str(city)
 
     def _condicion(self, data, extra):
         condition = data["condicion"]
@@ -383,7 +404,7 @@ class SifendeRequestBuilder:
         oca_motive = int(remision.get("motivo") or 1)
         motive = OCA_NRE_MOTIVE_TO_SIFEN[oca_motive]
         request = {
-            "receptor": self._receptor(data, extra),
+            "receptor": self._receptor(data, extra, address_required=True),
             "items": [
                 {
                     "codigo": item["codigo"],

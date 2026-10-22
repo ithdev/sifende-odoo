@@ -235,6 +235,29 @@ class TestRemisionYAutofactura(SifendeCommon):
             self.errors(move),
         )
 
+    def test_una_nota_a_un_cliente_sin_ubicacion_pide_la_ciudad_sifende(self):
+        move = self.make_nre()
+        self.partner.write(
+            {"state_id": False, "city_id": False, "city": "Ciudad Inventada"}
+        )
+        message = self.errors(move)
+        self.assertIn("necesita departamento y ciudad", message)
+        self.assertIn("Ciudad SIFEN", message)
+        self.assertFalse(self.fake.calls_to("POST", r"^/documento-electronico$"))
+
+    def test_una_nota_a_un_cliente_con_ciudad_sifende_no_necesita_departamento(self):
+        move = self.make_nre()
+        self.partner.write(
+            {
+                "state_id": False,
+                "city_id": False,
+                "city": False,
+                "l10n_py_sifende_city_id": self.city_sifende.id,
+            }
+        )
+        receptor = self.sent_payload(move)["receptor"]
+        self.assertEqual(receptor["ciudad"], "6106")
+
     def test_una_nota_a_un_cliente_innominado_se_avisa(self):
         move = self.make_nre()
         self.partner.write({"l10n_py_taxpayer_type": "2", "l10n_py_doc_type": "4"})

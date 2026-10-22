@@ -219,10 +219,14 @@ class AccountMove(models.Model):
                 f"{label}: " + self.env._("el receptor no puede ser innominado.")
             )
         if partner.country_id.code == "PY" and not (
-            partner.state_id and (partner.city_id or partner.city)
+            self._l10n_py_sifende_partner_geography()
+            or (partner.state_id and (partner.city_id or partner.city))
         ):
             errors.append(
-                f"{label}: " + self.env._("el cliente necesita departamento y ciudad.")
+                f"{label}: "
+                + self.env._(
+                    "el cliente necesita departamento y ciudad (o la «Ciudad SIFEN»)."
+                )
             )
         if self.l10n_py_transport_id:
             errors.extend(self._l10n_py_sifende_transport_errors(label, strict=True))

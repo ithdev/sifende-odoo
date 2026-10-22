@@ -218,6 +218,11 @@ Usage
     puntos de expedición inactivos, y *Registrar webhook*, de un webhook
     desactivado en Sifende.
 
+16. Si el contacto no tiene departamento ni una ciudad que Sifende
+    reconozca, la factura y las notas se emiten sin la dirección del
+    receptor, porque SIFEN la rechaza sin ciudad. La nota de remisión sí
+    la exige: elija la *Ciudad SIFEN* en el contacto.
+
 La vista previa del XML y del QR no está disponible: Sifende no genera
 documentos sin emitirlos.
 
