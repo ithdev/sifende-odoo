@@ -175,7 +175,7 @@ class AccountMove(models.Model):
 
     def _validate_afe_data(self, docs):
         errors = super()._validate_afe_data(docs)
-        if not docs and errors:
+        if not docs and errors and self._l10n_py_sifende_connector():
             errors[0] = self.env._(
                 "Autofactura: falta la constancia electrónica como documento "
                 "asociado. Indique su tipo y número en la sección Autofactura, o "
