@@ -52,6 +52,15 @@
                 </group>
             </xpath>
             <xpath
+                expr="//field[@name='vehicle_ids']/list/field[@name='plate_number']"
+                position="after"
+            >
+                <field
+                    name="sifende_flight_number"
+                    column_invisible="parent.transport_mode != '3'"
+                />
+            </xpath>
+            <xpath
                 expr="//field[@name='delivery_ids']/list/field[@name='department']"
                 position="before"
             >

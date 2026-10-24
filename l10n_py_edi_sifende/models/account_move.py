@@ -25,6 +25,7 @@ PAYMENT_CARDS = ("3", "4")
 CHEQUE_NUMBER_MAX = 8
 CHEQUE_BANK_RANGE = (4, 20)
 DOC_INVOICE = "1"
+DOC_SELF_INVOICE = "4"
 DOC_CREDIT_NOTE = "5"
 DOC_DEBIT_NOTE = "6"
 DOC_DELIVERY_NOTE = "7"
@@ -442,7 +443,6 @@ class AccountMove(models.Model):
             "cliente": {
                 "email": self.partner_id.email or None,
                 "codigoCliente": self.partner_id.ref or None,
-                "ciudad": self._l10n_py_sifende_city_name(),
             },
             "items": [
                 self._l10n_py_sifende_item_data(line)
@@ -571,7 +571,7 @@ class AccountMove(models.Model):
                 self.env._("El número de timbrado debe ser numérico para Sifende.")
             )
         if (
-            code == DOC_INVOICE
+            code in (DOC_INVOICE, DOC_SELF_INVOICE)
             and self.l10n_py_payment_type == PAYMENT_CHEQUE
             and self._l10n_py_sifende_is_cash()
         ):

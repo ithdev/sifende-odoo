@@ -496,11 +496,11 @@ la pestaña <em>Facturación electrónica</em>. El documento asociado se
 completa solo con el CDC de la factura de origen cuando esta ya lo
 tiene. En una nota de remisión, indique también el responsable de la
 emisión y los kilómetros del recorrido.</li>
-<li>Si una factura al contado se paga con <em>Cheque</em> (<em>Tipo de Pago</em> en la
-pestaña <em>Facturación electrónica</em>), complete el número del cheque
-(solo dígitos, hasta 8) y el banco (de 4 a 20 caracteres): Sifende
-los exige. Con tarjeta, la <em>Marca de la tarjeta</em> es obligatoria
-(<em>Otra</em> si no figura en la lista).</li>
+<li>Si una factura o autofactura al contado se paga con <em>Cheque</em> (<em>Tipo
+de Pago</em> en la pestaña <em>Facturación electrónica</em>), complete el
+número del cheque (solo dígitos, hasta 8) y el banco (de 4 a 20
+caracteres): Sifende los exige. Con tarjeta, la <em>Marca de la
+tarjeta</em> es obligatoria (<em>Otra</em> si no figura en la lista).</li>
 <li>Si SIFEN rechaza un documento ya enviado (<em>Rechazado</em> con el CDC
 cargado), Sifende no permite reenviar ese número ni con los mismos
 datos, y <strong>Reintentar</strong> muestra el procedimiento en lugar de enviar.
@@ -536,8 +536,9 @@ manda el KuDE y <strong>Imprimir</strong> muestra el aviso de documento
 cancelado. Las facturas de proveedor y las de otros proveedores de
 EDI conservan el comportamiento estándar de Odoo.</li>
 <li>En guaraníes, Sifende redondea el total hacia abajo a múltiplos de
-50 y exige que los pagos y las cuotas lo cubran: el conector reparte
-los montos de Odoo en proporción y la última cuota absorbe el resto.</li>
+50 y exige que los pagos y las cuotas lo cubran (también el pago de
+una autofactura): el conector reparte los montos de Odoo en
+proporción y la última cuota absorbe el resto.</li>
 <li>Si Sifende responde que el número ya está en uso, el documento queda
 en <em>Error</em>. Suba <em>Número Desde</em> del timbrado al siguiente número
 libre del punto (panel de Sifende &gt; Numeración) y pulse
@@ -570,6 +571,9 @@ desactivado en Sifende.</li>
 reconozca, la factura y las notas se emiten sin la dirección del
 receptor, porque SIFEN la rechaza sin ciudad. La nota de remisión sí
 la exige: elija la <em>Ciudad SIFEN</em> en el contacto.</li>
+<li>En un transporte aéreo, cada vehículo necesita su <em>Número de vuelo</em>
+(6 caracteres), que aparece en la lista de vehículos al elegir la
+modalidad <em>Aéreo</em>.</li>
 </ol>
 <p>La vista previa del XML y del QR no está disponible: Sifende no genera
 documentos sin emitirlos.</p>

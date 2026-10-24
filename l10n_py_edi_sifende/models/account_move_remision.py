@@ -13,6 +13,8 @@ MANIFEST_MAX = 15
 VEHICLES_MAX = 4
 SIFEN_START = date(2018, 11, 22)
 IMPORT_DISPATCH_LENGTH = 16
+FLIGHT_NUMBER_LENGTH = 6
+AIR_TRANSPORT = "3"
 DIGITS_RE = re.compile(r"\d+")
 
 
@@ -139,6 +141,10 @@ class AccountMove(models.Model):
                 for delivery in transport.delivery_ids
             ],
             "transportista": {key: value for key, value in carrier.items() if value},
+            "vehiculos": [
+                {"numeroVuelo": vehicle.sifende_flight_number or None}
+                for vehicle in transport.vehicle_ids
+            ],
         }
 
     # === Constancia de la autofactura como documento asociado ===
@@ -326,6 +332,17 @@ class AccountMove(models.Model):
         if strict and not 1 <= len(vehicles) <= VEHICLES_MAX:
             add(self.env._("indique de 1 a 4 vehículos."))
         for number, vehicle in enumerate(vehicles, 1):
+            if (
+                transport.transport_mode == AIR_TRANSPORT
+                and len(vehicle.sifende_flight_number or "") != FLIGHT_NUMBER_LENGTH
+            ):
+                add(
+                    self.env._(
+                        "el número de vuelo del vehículo %(number)s debe tener "
+                        "6 caracteres.",
+                        number=number,
+                    )
+                )
             if not 4 <= len(vehicle.vehicle_type or "") <= 10:
                 add(
                     self.env._(

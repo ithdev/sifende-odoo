@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from odoo.exceptions import UserError
 from odoo.tests import tagged
 
@@ -48,11 +50,13 @@ class TestRequestMapping(SifendeCommon):
         self.assertEqual(receptor["ciudad"], "1")
         self.assertEqual(receptor["codigoDistrito"], 1)
 
-    def test_receptor_con_una_ciudad_que_sifende_no_reconoce_va_por_nombre(self):
+    def test_receptor_con_una_ciudad_que_sifende_no_reconoce_se_envia_sin_direccion(
+        self,
+    ):
         self.partner.write({"city_id": False, "city": "Ciudad Inventada"})
         receptor = self.sent_payload(self.make_move("fe"))["receptor"]
-        self.assertEqual(receptor["departamento"], "CENTRAL")
-        self.assertEqual(receptor["ciudad"], "Ciudad Inventada")
+        for key in ("direccion", "numeroCasa", "departamento", "ciudad"):
+            self.assertNotIn(key, receptor)
         self.assertNotIn("codigoDistrito", receptor)
 
     def test_receptor_sin_departamento_toma_la_ciudad_del_catalogo_por_nombre(self):
@@ -271,6 +275,76 @@ class TestRequestMapping(SifendeCommon):
             .id,
         )
         self.assertEqual(self.sent_payload(move), self.expected("afe"))
+
+    def afe_vals(self, **extra):
+        return {
+            "lines": [self.line(price=55125.0, tax=self.tax_exempt)],
+            "l10n_py_afe_constancia_type": "1",
+            "l10n_py_afe_constancia_number": "CONST-1",
+            "l10n_py_afe_constancia_control": "CTRL-1",
+            "l10n_py_afe_vendor_doc_type": "1",
+            "l10n_py_afe_vendor_doc_number": "1234567",
+            "l10n_py_afe_vendor_name": "María González",
+            "l10n_py_afe_vendor_address": "Av. España",
+            "l10n_py_afe_vendor_house": 0,
+            "l10n_py_sifende_afe_vendor_city_id": self.city_sifende.id,
+            "l10n_py_afe_provision_address": "Ruta 1 km 20",
+            "l10n_py_sifende_afe_provision_city_id": self.city_sifende.id,
+            **extra,
+        }
+
+    def test_la_autofactura_paga_el_total_redondeado_a_50(self):
+        move = self.make_move("af", **self.afe_vals())
+        self.assertEqual(move.amount_total, 55125)
+        payload = self.sent_payload(move)
+        self.assertEqual(payload["items"][0]["precioUnitario"], 55125)
+        self.assertEqual(payload["condicionPago"]["montoPago"], 55100)
+
+    def test_la_autofactura_con_cheque_informa_numero_y_banco(self):
+        move = self.make_move(
+            "af",
+            **self.afe_vals(
+                l10n_py_payment_type="2",
+                l10n_py_sifende_cheque_numero="1234",
+                l10n_py_sifende_cheque_banco="  Banco Continental ",
+            ),
+        )
+        payment = self.sent_payload(move)["condicionPago"]
+        self.assertEqual(payment["tipoPago"], "CHEQUE")
+        self.assertEqual(payment["numeroCheque"], "00001234")
+        self.assertEqual(payment["bancoCheque"], "Banco Continental")
+        self.assertNotIn("cheque", payment)
+
+    def test_la_autofactura_con_cheque_exige_numero_y_banco_antes_de_enviar(self):
+        move = self.make_move("af", **self.afe_vals(l10n_py_payment_type="2"))
+        with self.assertRaisesRegex(UserError, "número del cheque") as error:
+            move.action_send_edi()
+        self.assertIn("banco", str(error.exception))
+        self.assertFalse(self.fake.calls_to("POST", ".*"))
+
+    def test_el_descuento_con_fraccion_por_unidad_en_guaranies_no_se_pierde(self):
+        move = self.make_move(
+            "fe",
+            lines=[
+                self.line(qty=100, price=101.0, tax=self.tax_exempt, discount=5.0),
+            ],
+        )
+        self.assertEqual(move.amount_total, 9595)
+        payload = self.sent_payload(move)
+        item = payload["items"][0]
+        self.assertEqual(item["descuentoParticular"], 5.05)
+        self.assertNotIn("descuentoParticularPorcentaje", item)
+        net = (Decimal(101) - Decimal(str(item["descuentoParticular"]))) * 100
+        self.assertEqual(net, 9595)
+        self.assertEqual(payload["pagos"][0]["montoPago"], 9550)
+
+    def test_el_descuento_sin_fraccion_sigue_yendo_como_porcentaje(self):
+        move = self.make_move(
+            "fe", lines=[self.line(price=20000.0, tax=self.tax_exempt, discount=5.0)]
+        )
+        item = self.sent_payload(move)["items"][0]
+        self.assertEqual(item["descuentoParticularPorcentaje"], 5.0)
+        self.assertNotIn("descuentoParticular", item)
 
     def test_la_fecha_de_emision_es_la_de_la_factura(self):
         payload = self.sent_payload(self.make_move("fe"))

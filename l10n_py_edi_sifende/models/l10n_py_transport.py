@@ -134,6 +134,8 @@ class TransportVehicle(models.Model):
     _name = "l10n_py.transport.vehicle"
     _inherit = ["l10n_py.transport.vehicle", "l10n_py.sifende.transport.child"]
 
+    sifende_flight_number = fields.Char(string="Número de vuelo (E967)", size=6)
+
 
 class TransportDelivery(models.Model):
     _name = "l10n_py.transport.delivery"
