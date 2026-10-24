@@ -1,35 +1,28 @@
-import json
-import logging
 import time
-import uuid
-from dataclasses import dataclass, field
-from urllib.parse import urlsplit
 
-import requests
-from requests.structures import CaseInsensitiveDict
-
-from odoo import SUPERUSER_ID, api, fields, models
+from odoo import api, fields, models
 from odoo.exceptions import AccessError, UserError, ValidationError
 
+from ..services import event_key
+from ..services.client import (
+    RETRY_AFTER_CAP,
+    RETRY_BACKOFF,
+    TRANSIENT_SLUGS,
+    TRANSIENT_STATUS,
+    SifendeClient,
+    SifendeTransportError,
+    insecure_url_message,
+    is_secure_url,
+    mask_key,
+)
 from ..services.request_builder import SifendeRequestBuilder
 
-_logger = logging.getLogger(__name__)
-
 DEFAULT_BASE_URL = "https://api.sifende.com.py"
-API_PREFIX = "/api/v1"
 PANEL_BILLING_URL = "https://app.sifende.com.py"
 DEFAULT_SERIES = "AA"
-USER_AGENT = "odoo-l10n_py_edi_sifende/18.0"
 
-ENUM_CACHE_TTL = 24 * 3600
-_ENUM_CACHE = {}
-
-RETRY_BACKOFF = (1, 2)
-RETRY_AFTER_CAP = 10
 KUDE_MAX_WAIT = 30
 KUDE_DEFAULT_POLL = 5
-TRANSIENT_STATUS = (429, 500, 502, 503, 504)
-TRANSIENT_SLUGS = ("idempotency-in-progress", "idempotency-upstream-unknown")
 SETUP_SLUGS = (
     "configuracion-incompleta",
     "timbrado-no-vigente",
@@ -41,8 +34,6 @@ APPROVED_STATES = ("APROBADO", "APROBADO_OBSERVACION")
 PENDING_STATES = ("PENDIENTE", "EN_LOTE")
 
 WEBHOOK_PATH = "/l10n_py_edi_sifende/webhook"
-WEBHOOK_EVENTS = ("documento.aprobado", "documento.rechazado", "documento.cancelado")
-LOCAL_HOSTS = ("localhost", "127.0.0.1", "0.0.0.0", "::1")
 
 GROUP_READONLY = "account.group_account_readonly"
 GROUP_BILLING = "account.group_account_invoice"
@@ -57,63 +48,6 @@ KEY_PREFIX_ENVIRONMENTS = {
     SANDBOX_KEY_PREFIX: "test",
     "sk_test_": "test",
 }
-
-
-class SifendeTransportError(Exception):
-    """Timeout o conexión caída: la solicitud pudo no haber llegado."""
-
-
-@dataclass
-class SifendeResponse:
-    status_code: int
-    headers: dict = field(default_factory=CaseInsensitiveDict)
-    body: object = None
-    content: bytes = b""
-
-    @property
-    def ok(self):
-        return 200 <= self.status_code < 300
-
-    @property
-    def slug(self):
-        problem_type = self.body.get("type") if isinstance(self.body, dict) else None
-        return problem_type.rstrip("/").rsplit("/", 1)[-1] if problem_type else None
-
-    @property
-    def detail(self):
-        if not isinstance(self.body, dict):
-            return None
-        return (
-            self.body.get("detail") or self.body.get("title") or self.body.get("error")
-        )
-
-    @property
-    def field_errors(self):
-        errors = self.body.get("errores") if isinstance(self.body, dict) else None
-        return errors if isinstance(errors, dict) else {}
-
-    @property
-    def retry_after(self):
-        try:
-            return int(self.headers.get("Retry-After"))
-        except (TypeError, ValueError):
-            return None
-
-
-def is_secure_url(url):
-    parts = urlsplit(url or "")
-    host = parts.hostname or ""
-    if not host:
-        return False
-    return parts.scheme == "https" or (parts.scheme == "http" and host in LOCAL_HOSTS)
-
-
-def mask_key(api_key):
-    if not api_key:
-        return ""
-    parts = api_key.split("_")
-    prefix = "_".join(parts[:2]) + "_" if len(parts) > 2 else ""
-    return f"{prefix}****"
 
 
 class EDIConnector(models.Model):
@@ -177,7 +111,7 @@ class EDIConnector(models.Model):
             if connector.sifende_base_url and not is_secure_url(
                 connector.sifende_base_url
             ):
-                raise ValidationError(self._sifende_insecure_url_message())
+                raise ValidationError(insecure_url_message(self.env))
 
     @api.constrains("environment", "sifende_api_key")
     def _check_sifende_environment(self):
@@ -214,11 +148,6 @@ class EDIConnector(models.Model):
                     prefix=mask_key(self.sudo().sifende_api_key),
                 )
             )
-
-    def _sifende_insecure_url_message(self):
-        return self.env._(
-            "La URL de Sifende debe usar HTTPS; HTTP solo se admite para localhost."
-        )
 
     def write(self, vals):
         if "sifende_api_key" in vals and "sifende_ambiente" not in vals:
@@ -291,7 +220,7 @@ class EDIConnector(models.Model):
 
     def _sifende_fetch_xml(self, cdc, document=None):
         self.ensure_one()
-        response = self._sifende_call(
+        response = self._sifende_client().request(
             "GET",
             f"/documento-electronico/{cdc}/xml",
             operation="download_xml",
@@ -305,14 +234,14 @@ class EDIConnector(models.Model):
             raise UserError(
                 self.env._("SIFENDE todavía no tiene el XML de este documento.")
             )
-        raise UserError(self._sifende_failure_message(response))
+        raise UserError(response.failure_message(self.env))
 
     def _sifende_fetch_kude(self, cdc, document=None, max_wait=KUDE_MAX_WAIT):
         self.ensure_one()
         params = None
         waited = 0
         while True:
-            response = self._sifende_call(
+            response = self._sifende_client().request(
                 "GET",
                 f"/documento-electronico/{cdc}/kude",
                 operation="download_pdf",
@@ -324,7 +253,7 @@ class EDIConnector(models.Model):
             if response.status_code == 200 and response.content:
                 return response.content
             if response.status_code != 202:
-                raise UserError(self._sifende_failure_message(response))
+                raise UserError(response.failure_message(self.env))
             wait = max(
                 1, min(response.retry_after or KUDE_DEFAULT_POLL, RETRY_AFTER_CAP)
             )
@@ -353,7 +282,7 @@ class EDIConnector(models.Model):
             else None
         )
         try:
-            response = self._sifende_call(
+            response = self._sifende_client().request(
                 "POST",
                 "/documento-electronico",
                 operation="send",
@@ -432,9 +361,9 @@ class EDIConnector(models.Model):
             failure["error"] = self._sifende_setup_message(slug, response)
         elif response.status_code in (400, 422):
             failure["edi_status"] = "rejected"
-            failure["error"] = self._sifende_failure_message(response)
+            failure["error"] = response.failure_message(self.env)
         else:
-            failure["error"] = self._sifende_failure_message(response)
+            failure["error"] = response.failure_message(self.env)
         return failure
 
     def _sifende_setup_message(self, slug, response):
@@ -490,7 +419,7 @@ class EDIConnector(models.Model):
     def _sifende_check_status(self, cdc):
         self.ensure_one()
         try:
-            response = self._sifende_call(
+            response = self._sifende_client().request(
                 "GET",
                 f"/documento-electronico/status/{cdc}",
                 operation="status",
@@ -499,7 +428,7 @@ class EDIConnector(models.Model):
         except SifendeTransportError as e:
             return {"success": False, "error": str(e)}
         if not (response.ok and isinstance(response.body, dict)):
-            return {"success": False, "error": self._sifende_failure_message(response)}
+            return {"success": False, "error": response.failure_message(self.env)}
         body = response.body
         estado = body.get("estado")
         result = dict(body)
@@ -561,9 +490,9 @@ class EDIConnector(models.Model):
         )
 
     def _sifende_event(self, operation, path, payload, cdc=None, record=None):
-        key = self._sifende_event_key(record)
+        key = event_key.get_or_create(record)
         try:
-            response = self._sifende_call(
+            response = self._sifende_client().request(
                 "POST",
                 path,
                 operation=operation,
@@ -576,10 +505,10 @@ class EDIConnector(models.Model):
             return {"success": False, "error": str(e)}
         body = response.body if isinstance(response.body, dict) else {}
         if response.ok and body.get("estadoEvento") != "RECHAZADO":
-            self._sifende_forget_event_key(record, committed=False)
+            event_key.forget(record, committed=False)
             return {"success": True, "result": body}
         if self._sifende_is_definitive(response):
-            self._sifende_forget_event_key(record, committed=True)
+            event_key.forget(record, committed=True)
         if response.ok:
             return {
                 "success": False,
@@ -587,7 +516,7 @@ class EDIConnector(models.Model):
                 "error": body.get("mensajeRespuesta")
                 or self.env._("SIFEN rechazó el evento."),
             }
-        return {"success": False, "error": self._sifende_failure_message(response)}
+        return {"success": False, "error": response.failure_message(self.env)}
 
     @staticmethod
     def _sifende_is_definitive(response):
@@ -598,40 +527,18 @@ class EDIConnector(models.Model):
             or response.slug in TRANSIENT_SLUGS
         )
 
-    def _sifende_event_key(self, record):
-        # otro cursor: el rollback del error que ve el usuario no puede perderla
-        if not record:
-            return str(uuid.uuid4())
-        key = record.sudo().l10n_py_sifende_event_key
-        if not key:
-            key = str(uuid.uuid4())
-            self._sifende_write_event_key(record, key, committed=True)
-        return key
-
-    def _sifende_forget_event_key(self, record, committed):
-        if record and record.sudo().l10n_py_sifende_event_key:
-            self._sifende_write_event_key(record, False, committed)
-
-    def _sifende_write_event_key(self, record, key, committed):
-        values = {"l10n_py_sifende_event_key": key}
-        if not committed:
-            record.sudo().write(values)
-            return
-        with self.pool.cursor() as cr:
-            env = api.Environment(cr, SUPERUSER_ID, {})
-            env[record._name].browse(record.id).write(values)
-        record.invalidate_recordset(list(values))
-
     def _sifende_test_connection(self):
         self.ensure_one()
         try:
-            response = self._sifende_call("GET", "/contribuyente", operation="validate")
+            response = self._sifende_client().request(
+                "GET", "/contribuyente", operation="validate"
+            )
         except SifendeTransportError as e:
             raise UserError(
                 self.env._("No se pudo contactar a SIFENDE: %(error)s", error=e)
             ) from e
         if not (response.ok and isinstance(response.body, dict)):
-            raise UserError(self._sifende_failure_message(response))
+            raise UserError(response.failure_message(self.env))
         taxpayer = response.body
         environment = taxpayer.get("ambiente")
         self.sudo().sifende_ambiente = environment
@@ -744,380 +651,20 @@ class EDIConnector(models.Model):
             "Use «Enviar a EDI» para emitirlo."
         )
 
-    # === Webhooks ===
-
-    def action_sifende_register_webhook(self):
-        self.ensure_one()
-        self._sifende_check_webhook_provider()
-        url = self._sifende_public_webhook_url()
-        existing = self._sifende_find_webhook(url)
-        if existing:
-            self.sudo().sifende_webhook_id = existing["id"]
-            if existing.get("activo") is False:
-                message = self.env._(
-                    "El webhook está desactivado en Sifende y no avisará a Odoo. "
-                    "Actívelo en el panel de Sifende, o pulse «Quitar webhook» y "
-                    "regístrelo de nuevo."
-                )
-                return self._sifende_notify(message, "warning")
-            if self.sudo().sifende_webhook_secret:
-                message = self.env._("El webhook ya está registrado en Sifende.")
-            else:
-                message = self.env._(
-                    "La URL ya estaba registrada en Sifende, pero el secreto solo se "
-                    "muestra al crearlo. Use «Rotar secreto» para obtener uno nuevo."
-                )
-            return self._sifende_notify(message, "warning")
-        response = self._sifende_webhook_call(
-            "POST", "", json_body={"url": url, "eventos": list(WEBHOOK_EVENTS)}
-        )
-        if not (response.ok and isinstance(response.body, dict)):
-            raise UserError(self._sifende_failure_message(response))
-        self._sifende_store_webhook(response.body)
-        return self._sifende_notify(
-            self.env._("Webhook registrado en Sifende: %(url)s", url=url), "success"
-        )
-
-    def action_sifende_rotate_webhook_secret(self):
-        self.ensure_one()
-        self._sifende_check_webhook_provider()
-        webhook_id = self._sifende_require_webhook_id()
-        response = self._sifende_webhook_call("POST", f"/{webhook_id}/rotar")
-        if response.status_code == 404:
-            # sin excepción: el rollback del RPC deshacería la limpieza
-            self._sifende_forget_webhook()
-            return self._sifende_notify(
-                self._sifende_webhook_missing_message(), "warning"
-            )
-        if not (response.ok and isinstance(response.body, dict)):
-            raise UserError(self._sifende_failure_message(response))
-        self._sifende_store_webhook(response.body)
-        return self._sifende_notify(
-            self.env._("Secreto del webhook rotado y guardado."), "success"
-        )
-
-    def action_sifende_remove_webhook(self):
-        self.ensure_one()
-        self._sifende_check_webhook_provider()
-        webhook_id = self._sifende_require_webhook_id()
-        response = self._sifende_webhook_call("DELETE", f"/{webhook_id}")
-        if not (response.ok or response.status_code == 404):
-            raise UserError(self._sifende_failure_message(response))
-        self._sifende_forget_webhook()
-        return self._sifende_notify(
-            self.env._("Webhook eliminado de Sifende."), "success"
-        )
-
-    def _sifende_check_webhook_provider(self):
-        if self.provider_type != "sifende":
-            raise UserError(self.env._("El conector no es de Sifende."))
-        if not self.env.is_system():
-            raise UserError(
-                self.env._("Solo un administrador puede gestionar el webhook.")
-            )
-
-    def _sifende_public_webhook_url(self):
-        base_url = (
-            self.env["ir.config_parameter"].sudo().get_param("web.base.url") or ""
-        ).rstrip("/")
-        parts = urlsplit(base_url)
-        if parts.scheme != "https" or (parts.hostname or "") in LOCAL_HOSTS:
-            raise UserError(
-                self.env._(
-                    "Sifende exige una URL pública con HTTPS y la URL base de Odoo "
-                    "(web.base.url) es «%(url)s». Configúrela en Ajustes > Técnico > "
-                    "Parámetros del sistema.",
-                    url=base_url,
-                )
-            )
-        return f"{base_url}{WEBHOOK_PATH}/{self.id}"
-
-    def _sifende_find_webhook(self, url):
-        response = self._sifende_webhook_call("GET", "")
-        if not (response.ok and isinstance(response.body, list)):
-            raise UserError(self._sifende_failure_message(response))
-        for webhook in response.body:
-            if (webhook.get("url") or "").rstrip("/") == url:
-                return webhook
-        return None
-
-    def _sifende_webhook_call(self, method, suffix, json_body=None):
-        try:
-            return self._sifende_call(
-                method,
-                f"/contribuyente/webhooks{suffix}",
-                operation="event",
-                json_body=json_body,
-            )
-        except SifendeTransportError as e:
-            raise UserError(
-                self.env._("No se pudo contactar a SIFENDE: %(error)s", error=e)
-            ) from e
-
-    def _sifende_store_webhook(self, body):
-        self.sudo().write(
-            {
-                "sifende_webhook_id": (body.get("endpoint") or {}).get("id"),
-                "sifende_webhook_secret": body.get("secreto"),
-            }
-        )
-
-    def _sifende_forget_webhook(self):
-        self.sudo().write({"sifende_webhook_id": 0, "sifende_webhook_secret": False})
-
-    def _sifende_require_webhook_id(self):
-        webhook_id = self.sudo().sifende_webhook_id
-        if not webhook_id:
-            raise UserError(self.env._("El conector no tiene un webhook registrado."))
-        return webhook_id
-
-    def _sifende_webhook_missing_message(self):
-        return self.env._("El webhook ya no existe en Sifende. Regístrelo de nuevo.")
-
-    def _sifende_notify(self, message, notification_type):
-        return {
-            "type": "ir.actions.client",
-            "tag": "display_notification",
-            "params": {
-                "title": self.env._("Webhook de Sifende"),
-                "message": message,
-                "type": notification_type,
-                "sticky": notification_type != "success",
-                "next": SOFT_RELOAD,
-            },
-        }
-
-    # === Catálogo de enumeraciones ===
-
-    def _sifende_enums(self):
-        key = self._sifende_base_url()
-        cached = _ENUM_CACHE.get(key)
-        if cached and cached[0] > time.monotonic():
-            return cached[1]
-        try:
-            response = self._sifende_call(
-                "GET",
-                "/public/enums",
-                operation="validate",
-                authenticated=False,
-                log=False,
-            )
-        except SifendeTransportError as e:
-            raise UserError(
-                self.env._(
-                    "No se pudo obtener el catálogo de SIFENDE: %(error)s", error=e
-                )
-            ) from e
-        if not (response.ok and isinstance(response.body, dict)):
-            raise UserError(self._sifende_failure_message(response))
-        _ENUM_CACHE[key] = (time.monotonic() + ENUM_CACHE_TTL, response.body)
-        return response.body
-
     def _sifende_enum_name(self, category, code):
-        for value in self._sifende_enums().get(category) or []:
+        for value in self._sifende_client().enums().get(category) or []:
             if value.get("val") is not None and int(value["val"]) == int(code):
                 return value["name"]
         return None
 
-    @api.model
-    def _sifende_clear_enum_cache(self):
-        _ENUM_CACHE.clear()
-
-    # === HTTP ===
-
     def _sifende_base_url(self):
         return (self.sudo().sifende_base_url or DEFAULT_BASE_URL).rstrip("/")
 
-    def _sifende_call(
-        self,
-        method,
-        path,
-        *,
-        operation,
-        json_body=None,
-        params=None,
-        idempotency_key=None,
-        retries=0,
-        document=None,
-        cdc=None,
-        binary=False,
-        authenticated=True,
-        log=True,
-    ):
+    def _sifende_client(self):
         self.ensure_one()
-        api_key = self.sudo().sifende_api_key
-        if authenticated and not api_key:
-            raise UserError(
-                self.env._(
-                    "Configure la API key de Sifende en el conector EDI de la empresa."
-                )
-            )
-        url = f"{self._sifende_base_url()}{API_PREFIX}{path}"
-        if authenticated and not is_secure_url(url):
-            raise UserError(self._sifende_insecure_url_message())
-        headers = {"Accept": "application/json", "User-Agent": USER_AGENT}
-        if authenticated:
-            headers["Authorization"] = f"Bearer {api_key}"
-        if idempotency_key:
-            headers["Idempotency-Key"] = idempotency_key
-        if binary:
-            headers["Accept"] = "*/*"
-
-        started = time.monotonic()
-        attempt = 0
-        transport_error = None
-        response = None
-        while True:
-            transport_error = response = None
-            try:
-                raw = requests.request(
-                    method,
-                    url,
-                    headers=headers,
-                    params=params,
-                    json=json_body,
-                    timeout=self.timeout or 30,
-                )
-                response = self._sifende_parse(raw, binary)
-            except (requests.Timeout, requests.ConnectionError) as e:
-                transport_error = e
-            if attempt >= retries or not self._sifende_should_retry(
-                response, transport_error
-            ):
-                break
-            time.sleep(self._sifende_backoff(attempt, response))
-            attempt += 1
-
-        if log:
-            self._sifende_log(
-                operation,
-                method,
-                url,
-                json_body,
-                response,
-                transport_error,
-                started,
-                attempt,
-                document,
-                cdc,
-                headers,
-            )
-        if transport_error is not None:
-            raise SifendeTransportError(
-                self._sifende_transport_message(transport_error)
-            )
-        return response
-
-    @staticmethod
-    def _sifende_should_retry(response, transport_error):
-        if transport_error is not None:
-            return True
-        return (
-            response.status_code in TRANSIENT_STATUS or response.slug in TRANSIENT_SLUGS
-        )
-
-    @staticmethod
-    def _sifende_backoff(attempt, response):
-        if response is not None and response.retry_after:
-            return min(response.retry_after, RETRY_AFTER_CAP)
-        return RETRY_BACKOFF[min(attempt, len(RETRY_BACKOFF) - 1)]
-
-    @staticmethod
-    def _sifende_parse(raw, binary):
-        headers = CaseInsensitiveDict(raw.headers or {})
-        content = raw.content or b""
-        body = None
-        content_type = (headers.get("Content-Type") or "").lower()
-        if "json" in content_type or not binary:
-            try:
-                body = raw.json()
-            except ValueError:
-                body = None
-        return SifendeResponse(
-            raw.status_code, headers, body, content if binary else b""
-        )
-
-    def _sifende_transport_message(self, error):
-        if isinstance(error, requests.Timeout):
-            return self.env._("tiempo de espera agotado")
-        return self.env._("conexión rechazada o interrumpida")
-
-    def _sifende_failure_message(self, response):
-        if response.status_code == 401:
-            return self.env._(
-                "SIFENDE rechazó la API key (401). Verifique que sea válida y no "
-                "esté vencida."
-            )
-        parts = [
-            response.detail
-            or self.env._("Error HTTP %(status)s", status=response.status_code)
-        ]
-        parts.extend(
-            f"{name}: {message}" for name, message in response.field_errors.items()
-        )
-        return "\n".join(parts)
-
-    @staticmethod
-    def _sifende_redact(body):
-        if isinstance(body, dict) and body.get("secreto"):
-            return {**body, "secreto": "whsec_****"}
-        return body
-
-    @staticmethod
-    def _sifende_body_cdc(response):
-        body = response.body if response is not None else None
-        return body.get("cdc") if isinstance(body, dict) else None
-
-    def _sifende_log(
-        self,
-        operation,
-        method,
-        url,
-        json_body,
-        response,
-        transport_error,
-        started,
-        attempt,
-        document,
-        cdc,
-        headers,
-    ):
-        api_key = self.sudo().sifende_api_key
-        logged_headers = {
-            name: (f"Bearer {mask_key(api_key)}" if name == "Authorization" else value)
-            for name, value in headers.items()
-        }
-        failed = transport_error is not None or (
-            response is not None and not response.ok
-        )
-        if response is not None and response.body is not None:
-            response_data = self._sifende_redact(response.body)
-        elif response is not None and response.content:
-            response_data = f"<{len(response.content)} bytes>"
-        else:
-            response_data = None
-        error_message = None
-        if failed:
-            error_message = (
-                self._sifende_transport_message(transport_error)
-                if transport_error is not None
-                else self._sifende_failure_message(response)
-            )
-        self.env["l10n_py.edi.log"].log_operation(
-            operation_type=operation,
-            provider="sifende",
-            document=document or None,
-            request_data=json_body,
-            response_data=response_data,
-            execution_time=(time.monotonic() - started) * 1000,
-            success=not failed,
-            error_message=error_message,
-            endpoint=url,
-            method=method,
-            request_headers=json.dumps(logged_headers, ensure_ascii=False),
-            status_code=response.status_code if response is not None else 0,
-            retry_count=attempt,
-            cdc=cdc
-            or self._sifende_body_cdc(response)
-            or (document.l10n_py_cdc if document else False),
+        return SifendeClient(
+            self.env,
+            self._sifende_base_url(),
+            self.sudo().sifende_api_key,
+            self.timeout,
         )
