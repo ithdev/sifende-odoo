@@ -30,4 +30,6 @@
 9. Permisos. Cada conector solo se opera desde su empresa. Enviar, reintentar y cancelar un
    documento exige el rol *Contabilidad > Facturación* y poder editar el documento; consultar
    su estado, también el de solo lectura. *Inutilizar números* y **Probar Conexión** son del
-   *Contabilidad > Administrador*. La API key, la URL base y el webhook son de *Ajustes*.
+   *Contabilidad > Administrador*. La API key, la URL base y el webhook son de *Ajustes*. Los
+   transportes de remisión, con sus vehículos y entregas, son de la empresa del documento: otra
+   empresa no los ve ni los edita, y un transporte aún sin documento solo lo edita quien lo creó.
