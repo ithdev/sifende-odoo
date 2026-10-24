@@ -455,7 +455,10 @@ reintentar y cancelar un documento exige el rol <em>Contabilidad &gt;
 Facturación</em> y poder editar el documento; consultar su estado,
 también el de solo lectura. <em>Inutilizar números</em> y <strong>Probar
 Conexión</strong> son del <em>Contabilidad &gt; Administrador</em>. La API key, la URL
-base y el webhook son de <em>Ajustes</em>.</li>
+base y el webhook son de <em>Ajustes</em>. Los transportes de remisión, con
+sus vehículos y entregas, son de la empresa del documento: otra
+empresa no los ve ni los edita, y un transporte aún sin documento
+solo lo edita quien lo creó.</li>
 </ol>
 </div>
 <div class="section" id="usage">
@@ -466,8 +469,10 @@ documentos publicados). El documento pasa a <em>Procesando</em>. Una vez
 enviado, los datos de pago (tipo de pago, cheque, tarjeta, condición
 de pago y vencimientos) y los datos fiscales de la pestaña
 <em>Facturación Electrónica</em> (emisión, transacción, presencia, ID de
-recibo, contingencia, remisión, autofactura, transporte y documentos
-asociados) ya no se pueden modificar.</li>
+recibo, contingencia, remisión, autofactura, transporte con sus
+vehículos y entregas, y documentos asociados) ya no se pueden
+modificar. Lo mismo vale mientras un envío espera confirmación (ver
+el punto 3).</li>
 <li>El estado se actualiza solo: <em>Aceptado</em> con el XML y el KuDE
 adjuntos, o <em>Rechazado</em> con los mensajes de SIFEN en el campo
 <em>Mensaje EDI</em>. Si el webhook está registrado, Sifende avisa a Odoo
@@ -478,12 +483,14 @@ ejemplo por un campo obligatorio), corrija el dato y pulse
 <strong>Reintentar</strong>: usa una clave de idempotencia nueva. Si queda con
 <em>Error</em> por un fallo de conexión o de Sifende antes de registrar el
 documento (el mensaje lo indica), <strong>Reintentar</strong> usa la misma clave
-y no se duplica. Si el <em>Error</em> es un fallo definitivo del envío a
-SIFEN, el documento ya tiene CDC y número tomados: <strong>Reintentar</strong> no
-lo reemite y muestra el procedimiento. Reintente el lote desde el
-panel de Sifende o pídalo a soporte; Odoo consulta el documento cada
-hora y lo actualiza solo (<em>Procesando</em> y luego <em>Aceptado</em>) cuando
-vuelve a procesarse con el mismo CDC.</li>
+y no se duplica; mientras tanto el documento no vuelve a borrador y
+sus datos no se modifican, para que el reintento envíe exactamente
+lo mismo. Si el <em>Error</em> es un fallo definitivo del envío a SIFEN, el
+documento ya tiene CDC y número tomados: <strong>Reintentar</strong> no lo
+reemite y muestra el procedimiento. Reintente el lote desde el panel
+de Sifende o pídalo a soporte; Odoo consulta el documento cada hora
+y lo actualiza solo (<em>Procesando</em> y luego <em>Aceptado</em>) cuando vuelve
+a procesarse con el mismo CDC.</li>
 <li>En una nota de crédito o de débito, elija el <em>Motivo de emisión</em> en
 la pestaña <em>Facturación electrónica</em>. El documento asociado se
 completa solo con el CDC de la factura de origen cuando esta ya lo
@@ -504,7 +511,10 @@ el número del documento rechazado, y pulse <strong>Enviar al SIFEN</strong>.
 Luego pulse <strong>Restablecer a borrador</strong> y <strong>Cancelar</strong> en el
 documento rechazado y emita uno nuevo, que recibe el número
 siguiente. Odoo solo permite inutilizar números sin documento o de
-documentos rechazados.</li>
+documentos rechazados. Si Sifende no respondió, <strong>Enviar al SIFEN</strong>
+reutiliza la misma solicitud: mientras tanto el timbrado, el rango y
+el motivo no se pueden cambiar. Para pedir otro rango, elimine la
+inutilización y cree una nueva.</li>
 <li>Para cancelar un documento aceptado, pulse <strong>Cancelar EDI</strong>: se abre
 el asistente «Cancelar documento electrónico», donde se escribe el
 motivo (se envía a SIFEN) y se confirma con <strong>Cancelar Documento</strong>.
