@@ -6,7 +6,7 @@ from odoo.tests import tagged
 
 from odoo.addons.l10n_py_edi_sifende.models import account_move
 
-from .common import FakeResponse, SifendeCommon
+from .common import API_KEY, FakeResponse, SifendeCommon
 
 PDF = b"%PDF-1.4 kude"
 XML = b"<rDE/>"
@@ -113,6 +113,64 @@ class TestCron(SifendeCommon):
         self.run_cron()
         self.sleep.assert_not_called()
         self.assertTrue(move.l10n_py_sifende_archivos_pendientes)
+
+    def make_second_connector_move(self):
+        company = self.env["res.company"].create(
+            {
+                "name": "Segunda Empresa Test",
+                "country_id": self.country_py.id,
+                "currency_id": self.env.ref("base.PYG").id,
+            }
+        )
+        self.env["l10n_py.edi.connector"].create(
+            {
+                "name": "Sifende 2",
+                "provider_type": "sifende",
+                "environment": "test",
+                "sifende_api_key": API_KEY,
+                "company_id": company.id,
+            }
+        )
+        (move,) = self.make_tracked(1)
+        move.l10n_py_cdc = "9" * 44
+        self.env.cr.execute(
+            "UPDATE account_move SET company_id = %s WHERE id = %s",
+            (company.id, move.id),
+        )
+        move.invalidate_recordset()
+        return move
+
+    def test_un_conector_con_mucho_trabajo_no_deja_sin_turno_a_los_demas(self):
+        first = self.make_tracked(2)
+        other = self.make_second_connector_move()
+        clock = [0.0]
+
+        def sync(record, connector, *args, **kwargs):
+            clock[0] += 30
+
+        with (
+            patch.object(account_move.time, "monotonic", lambda: clock[0]),
+            patch.object(type(first), "_l10n_py_sifende_sync", sync),
+        ):
+            self.run_cron()
+            self.run_cron()
+        self.assertTrue(other.l10n_py_sifende_ultima_consulta)
+
+    def test_el_cron_respeta_el_limite_de_lote_de_cada_conector(self):
+        first = self.make_tracked(3)
+        other = self.make_second_connector_move()
+        synced = []
+
+        def sync(record, connector, *args, **kwargs):
+            synced.append(record)
+
+        with (
+            patch.object(account_move, "CRON_BATCH_SIZE", 2),
+            patch.object(type(first), "_l10n_py_sifende_sync", sync),
+        ):
+            self.run_cron()
+        self.assertEqual(len(synced), 3)
+        self.assertIn(other, synced)
 
     # === Cancelaciones ===
 

@@ -50,6 +50,29 @@ class AccountMove(models.Model):
             and self._l10n_py_sifende_is_document()
         )
 
+    def _l10n_py_sifende_is_cancelled_document(self):
+        self.ensure_one()
+        return (
+            self.l10n_py_edi_status == "cancelled"
+            and self.state == "posted"
+            and self._l10n_py_sifende_is_document()
+        )
+
+    def _l10n_py_sifende_cancelled_document(self):
+        # el PDF de Odoo lleva el aviso de cancelación; el KuDE guardado ya no vale
+        report = self.env["ir.actions.report"]
+        content, report_type = report._pre_render_qweb_pdf(
+            "account.account_invoices", self.ids
+        )
+        content_by_id = report._get_splitted_report(
+            "account.account_invoices", content, report_type
+        )
+        return {
+            "filename": self._get_invoice_report_filename(),
+            "filetype": "pdf",
+            "content": content_by_id[self.id],
+        }
+
     def _l10n_py_sifende_send_error(self):
         """Motivo por el que el documento no puede enviarse como comprobante fiscal."""
         self.ensure_one()
@@ -133,6 +156,12 @@ class AccountMove(models.Model):
         if pdf and pdf.raw != kude:
             self.sudo().invoice_pdf_report_file = False
 
+    def _is_ready_to_be_sent(self):
+        self.ensure_one()
+        if self._l10n_py_sifende_send_error():
+            return False
+        return super()._is_ready_to_be_sent()
+
     def _get_report_base_filename(self):
         self.ensure_one()
         if self._l10n_py_sifende_has_kude():
@@ -156,6 +185,9 @@ class AccountMove(models.Model):
 
     def _get_invoice_legal_documents(self, filetype, allow_fallback=False):
         self.ensure_one()
+        if filetype == "pdf" and self._l10n_py_sifende_is_cancelled_document():
+            if self.invoice_pdf_report_id or allow_fallback:
+                return self._l10n_py_sifende_cancelled_document()
         if filetype == "pdf" and self._l10n_py_sifende_has_kude():
             if self.l10n_py_kude_pdf or allow_fallback:
                 return self._l10n_py_sifende_kude_document()
@@ -165,6 +197,10 @@ class AccountMove(models.Model):
 
     def _get_invoice_legal_documents_all(self, allow_fallback=False):
         self.ensure_one()
+        if self._l10n_py_sifende_is_cancelled_document() and (
+            allow_fallback or self.invoice_pdf_report_id
+        ):
+            return [self._l10n_py_sifende_cancelled_document()]
         if self._l10n_py_sifende_has_kude() and (
             allow_fallback or (self.l10n_py_kude_pdf and self.l10n_py_edi_xml)
         ):

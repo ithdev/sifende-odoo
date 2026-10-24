@@ -169,6 +169,32 @@ class TestKudeImprimir(KudeCommon):
             [(f"KUDE_{CDC}.pdf", PDF), (f"{CDC}.xml", XML)],
         )
 
+    def test_el_portal_y_el_menu_pdf_de_un_cancelado_no_entregan_el_kude_aprobado(self):
+        move = self.accepted_move()
+        self.send(move)
+        move._l10n_py_sifende_apply_state("CANCELADO")
+        self.assertEqual(move.l10n_py_edi_status, "cancelled")
+        move = move.with_context(force_report_rendering=True)
+        documents = move._get_invoice_legal_documents_all(allow_fallback=True)
+        single = move._get_invoice_legal_documents("pdf", allow_fallback=True)
+        for document in [*documents, single]:
+            self.assertEqual(document["content"], ODOO_PDF)
+            self.assertFalse(document["filename"].startswith("KUDE_"))
+        self.assertEqual(len(documents), 1)
+        self.assertEqual(base64.b64decode(move.l10n_py_kude_pdf), PDF)
+        self.assertEqual(base64.b64decode(move.l10n_py_edi_xml), XML)
+        self.assertEqual(move.invoice_pdf_report_id.raw, PDF)
+
+    def test_el_pdf_de_un_cancelado_lleva_el_aviso_de_cancelacion(self):
+        move = self.accepted_move(l10n_py_edi_status="cancelled")
+        html = (
+            self.env.ref("account.account_invoices")
+            ._render_qweb_html("account.account_invoices", move.ids)[0]
+            .decode()
+        )
+        self.assertIn("cancelado en SIFEN", html)
+        self.assertTrue(move._get_invoice_legal_documents("pdf", allow_fallback=True))
+
     def test_los_documentos_legales_no_consultan_a_sifende_sin_pedir_el_respaldo(self):
         move = self.accepted_move(files=False)
         self.assertFalse(move._get_invoice_legal_documents_all())
@@ -281,6 +307,33 @@ class TestKudeEnviar(KudeCommon):
             move.action_send_and_print()
         self.assertFalse(self.sent_attachments(move))
 
+    def test_el_envio_con_respaldo_no_manda_una_proforma_de_un_no_aceptado(self):
+        service = self.env["account.move.send"].with_context(
+            force_report_rendering=True
+        )
+        for status in (*NOT_ACCEPTED, "cancelled"):
+            with self.subTest(status=status):
+                move = self.accepted_move(files=False, l10n_py_edi_status=status)
+                for from_cron in (False, True):
+                    move.sending_data = {"author_user_id": self.env.uid}
+                    attachments = service._generate_and_send_invoices(
+                        move,
+                        from_cron=from_cron,
+                        allow_raising=False,
+                        allow_fallback_pdf=True,
+                    )
+                    self.assertFalse(attachments)
+                    self.assertFalse(self.sent_attachments(move))
+                    self.assertFalse(move.invoice_pdf_report_id)
+                self.assertFalse(move.is_move_sent)
+
+    def test_un_documento_se_considera_listo_para_enviar_solo_si_esta_aceptado(self):
+        for status in (*NOT_ACCEPTED, "cancelled"):
+            with self.subTest(status=status):
+                move = self.accepted_move(files=False, l10n_py_edi_status=status)
+                self.assertFalse(move._is_ready_to_be_sent())
+        self.assertTrue(self.accepted_move()._is_ready_to_be_sent())
+
     def test_enviar_varios_nombra_los_que_no_estan_aceptados(self):
         accepted = self.accepted_move()
         pending = self.accepted_move(files=False, l10n_py_edi_status="processing")
@@ -338,6 +391,23 @@ class TestKudeSinSifende(KudeCommon):
                 self.assertEqual(attachments.mapped("raw"), [ODOO_PDF])
                 self.assertNotIn("KUDE", attachments.name)
         self.assertFalse(self.fake.calls)
+
+    def test_el_envio_con_respaldo_sigue_mandando_la_proforma(self):
+        move = self.accepted_move(files=False, l10n_py_edi_status="processing")
+        self.assertTrue(move._is_ready_to_be_sent())
+        attachments = (
+            self.env["account.move.send"]
+            .with_context(force_report_rendering=True)
+            ._generate_and_send_invoices(
+                move, allow_raising=False, allow_fallback_pdf=True
+            )
+        )
+        self.assertTrue(attachments)
+
+    def test_los_documentos_legales_de_un_cancelado_no_cambian(self):
+        move = self.accepted_move(l10n_py_edi_status="cancelled")
+        self.assertFalse(move._get_invoice_legal_documents("pdf"))
+        self.assertFalse(move._get_invoice_legal_documents_all())
 
     def test_los_documentos_legales_no_cambian(self):
         move = self.accepted_move()

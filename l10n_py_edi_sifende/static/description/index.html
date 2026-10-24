@@ -391,7 +391,8 @@ el KuDE adjuntos.</p>
 <p>El cron también vuelve a consultar cada hora los documentos aceptados
 dentro de su plazo de cancelación, por si se cancelaron en Sifende y se
 perdió el aviso. En cada ejecución consulta hasta 200 documentos por
-conector, empezando por los que hace más tiempo no se consultan.</p>
+conector, empezando por los que hace más tiempo no se consultan, sea de
+la empresa que sea, para que ninguna se quede sin turno.</p>
 <p><strong>Table of contents</strong></p>
 <div class="contents local topic" id="contents">
 <ul class="simple">
@@ -533,8 +534,12 @@ error), <strong>Enviar</strong> avisa que todavía no hay comprobante fiscal.
 <strong>Imprimir</strong> sigue imprimiendo el PDF de Odoo, pero con el aviso
 «Sin validez fiscal». Si el documento fue <em>Cancelado</em>, <strong>Enviar</strong> no
 manda el KuDE y <strong>Imprimir</strong> muestra el aviso de documento
-cancelado. Las facturas de proveedor y las de otros proveedores de
-EDI conservan el comportamiento estándar de Odoo.</li>
+cancelado; lo mismo entregan el portal del cliente y el menú
+<em>Imprimir &gt; PDF</em>, y el KuDE y el XML originales siguen guardados
+para archivo. El envío automático o por lotes tampoco manda una
+proforma de un documento que no está <em>Aceptado</em>: queda sin enviar y
+el motivo en el chatter. Las facturas de proveedor y las de otros
+proveedores de EDI conservan el comportamiento estándar de Odoo.</li>
 <li>En guaraníes, Sifende redondea el total hacia abajo a múltiplos de
 50 y exige que los pagos y las cuotas lo cubran (también el pago de
 una autofactura): el conector reparte los montos de Odoo en

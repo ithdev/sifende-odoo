@@ -1,7 +1,7 @@
 import base64
 import logging
 import time
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from odoo import SUPERUSER_ID, api, fields, models
 from odoo.exceptions import UserError
@@ -912,19 +912,31 @@ class AccountMove(models.Model):
             .sudo()
             .search([("provider_type", "=", "sifende")])
         )
-        for connector in connectors:
-            for move in self._l10n_py_sifende_to_sync(connector):
-                if time.monotonic() > deadline:
-                    return
-                try:
-                    with self.env.cr.savepoint():
-                        move._l10n_py_sifende_sync(connector, kude_wait=0)
-                except Exception:
-                    _logger.exception(
-                        "Error consultando el estado en Sifende del documento %s",
-                        move.name,
-                    )
-                move.l10n_py_sifende_ultima_consulta = fields.Datetime.now()
+        # una sola cola ordenada por antigüedad: un conector con mucho trabajo no
+        # agota el presupuesto antes de que los demás tengan su turno
+        pending = [
+            (move, connector)
+            for connector in connectors
+            for move in self._l10n_py_sifende_to_sync(connector)
+        ]
+        pending.sort(
+            key=lambda item: (
+                item[0].l10n_py_sifende_ultima_consulta or datetime.min,
+                item[0].id,
+            )
+        )
+        for move, connector in pending:
+            if time.monotonic() > deadline:
+                return
+            try:
+                with self.env.cr.savepoint():
+                    move._l10n_py_sifende_sync(connector, kude_wait=0)
+            except Exception:
+                _logger.exception(
+                    "Error consultando el estado en Sifende del documento %s",
+                    move.name,
+                )
+            move.l10n_py_sifende_ultima_consulta = fields.Datetime.now()
 
     @api.model
     def _l10n_py_sifende_to_sync(self, connector):
