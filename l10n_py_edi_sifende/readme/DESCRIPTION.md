@@ -15,4 +15,5 @@ el KuDE adjuntos.
 
 El cron también vuelve a consultar cada hora los documentos aceptados dentro de su plazo de
 cancelación, por si se cancelaron en Sifende y se perdió el aviso. En cada ejecución consulta
-hasta 200 documentos por conector, empezando por los que hace más tiempo no se consultan.
+hasta 200 documentos por conector, empezando por los que hace más tiempo no se consultan,
+sea de la empresa que sea, para que ninguna se quede sin turno.

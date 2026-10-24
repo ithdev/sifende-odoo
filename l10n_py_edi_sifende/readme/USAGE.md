@@ -51,7 +51,10 @@
    Mientras el documento no esté *Aceptado* (borrador, procesando, rechazado o con error),
    **Enviar** avisa que todavía no hay comprobante fiscal. **Imprimir** sigue imprimiendo el PDF
    de Odoo, pero con el aviso «Sin validez fiscal». Si el documento fue *Cancelado*, **Enviar**
-   no manda el KuDE y **Imprimir** muestra el aviso de documento cancelado. Las facturas de
+   no manda el KuDE y **Imprimir** muestra el aviso de documento cancelado; lo mismo entregan
+   el portal del cliente y el menú *Imprimir > PDF*, y el KuDE y el XML originales siguen
+   guardados para archivo. El envío automático o por lotes tampoco manda una proforma de un
+   documento que no está *Aceptado*: queda sin enviar y el motivo en el chatter. Las facturas de
    proveedor y las de otros proveedores de EDI conservan el comportamiento estándar de Odoo.
 
 9. En guaraníes, Sifende redondea el total hacia abajo a múltiplos de 50 y exige que los pagos

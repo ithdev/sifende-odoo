@@ -45,3 +45,19 @@ class AccountMoveSend(models.AbstractModel):
                 "error_title": self.env._("No se puede enviar el comprobante fiscal:"),
                 "errors": [error],
             }
+
+    @api.model
+    def _generate_invoice_fallback_documents(self, invoices_data):
+        # sin comprobante fiscal no hay proforma de respaldo: el error se conserva
+        blocked = {
+            invoice
+            for invoice in invoices_data
+            if invoice._l10n_py_sifende_send_error()
+        }
+        return super()._generate_invoice_fallback_documents(
+            {
+                invoice: data
+                for invoice, data in invoices_data.items()
+                if invoice not in blocked
+            }
+        )
