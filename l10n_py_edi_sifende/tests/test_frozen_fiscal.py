@@ -101,6 +101,59 @@ class TestFrozenFiscal(SifendeCommon):
         with self.assertRaisesRegex(UserError, "fiscales"):
             move.l10n_py_transport_id = other
 
+    def test_el_transporte_y_sus_hijos_no_se_editan_con_el_documento_aceptado(self):
+        move = self.accepted(self.make_nre())
+        transport = move.l10n_py_transport_id
+        vehicle, delivery = transport.vehicle_ids, transport.delivery_ids
+        with self.assertRaisesRegex(UserError, "fiscales"):
+            transport.driver_name = "Otro chofer"
+        with self.assertRaisesRegex(UserError, "fiscales"):
+            transport.sifende_driver_address = "Otra calle"
+        with self.assertRaisesRegex(UserError, "fiscales"):
+            vehicle.plate_number = "ZZZ999"
+        with self.assertRaisesRegex(UserError, "fiscales"):
+            delivery.address = "Otra calle"
+        with self.assertRaisesRegex(UserError, "fiscales"):
+            self.env["l10n_py.transport.vehicle"].create(
+                {
+                    "transport_id": transport.id,
+                    "vehicle_type": "CAMION",
+                    "brand": "ISUZU",
+                    "plate_number": "XYZ123",
+                }
+            )
+        with self.assertRaisesRegex(UserError, "fiscales"):
+            delivery.unlink()
+        with self.assertRaisesRegex(UserError, "fiscales"):
+            vehicle.unlink()
+        with self.assertRaisesRegex(UserError, "fiscales"):
+            transport.unlink()
+        self.assertEqual(transport.driver_name, "Carlos Benítez")
+        self.assertEqual(move.l10n_py_transport_id, transport)
+
+    def test_el_transporte_se_edita_antes_de_enviar_y_sin_conector(self):
+        move = self.make_nre()
+        transport = move.l10n_py_transport_id
+        transport.driver_name = "Otro chofer"
+        transport.vehicle_ids.plate_number = "ZZZ999"
+        transport.delivery_ids.address = "Otra calle"
+        self.accepted(move)
+        self.connector.unlink()
+        transport.driver_name = "Chofer sin conector"
+        self.assertEqual(transport.driver_name, "Chofer sin conector")
+
+    def test_el_transporte_compartido_queda_congelado_por_cualquier_documento(self):
+        sent = self.accepted(self.make_nre())
+        transport = sent.l10n_py_transport_id
+        other = self.make_move("nr")
+        self.env.cr.execute(
+            "UPDATE account_move SET l10n_py_transport_id = %s WHERE id = %s",
+            (transport.id, other.id),
+        )
+        other.invalidate_recordset(["l10n_py_transport_id"])
+        with self.assertRaisesRegex(UserError, "fiscales"):
+            transport.driver_name = "Otro chofer"
+
     def test_los_documentos_asociados_no_se_tocan_con_el_documento_aceptado(self):
         move = self.make_move("fe")
         associated = self.associate(move)

@@ -40,6 +40,40 @@ class Transport(models.Model):
         inverse="_inverse_sifende_departure_city_id",
     )
 
+    # el transporte de un documento enviado es del documento: lo firmó SIFEN
+    def _l10n_py_sifende_check_editable(self, moves=None, frozen=True):
+        moves = (moves or self.env["account.move"]) | self.move_id
+        referencing = (
+            self.env["account.move"]
+            .sudo()
+            .search([("l10n_py_transport_id", "in", self.ids)])
+        )
+        moves |= self.env["account.move"].browse(referencing.ids)
+        for move in moves:
+            if not move._l10n_py_sifende_connector():
+                continue
+            move.check_access("write")
+            if frozen and move._l10n_py_sifende_frozen():
+                raise move._l10n_py_sifende_frozen_error(fiscal=True)
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        moves = self.env["account.move"].browse(
+            [vals["move_id"] for vals in vals_list if vals.get("move_id")]
+        )
+        self.browse()._l10n_py_sifende_check_editable(moves)
+        return super().create(vals_list)
+
+    def write(self, vals):
+        moves = self.env["account.move"].browse(vals.get("move_id"))
+        adopting = set(vals) == {"move_id"} and not self.move_id
+        self._l10n_py_sifende_check_editable(moves, frozen=not adopting)
+        return super().write(vals)
+
+    def unlink(self):
+        self._l10n_py_sifende_check_editable()
+        return super().unlink()
+
     @api.depends("departure_city")
     def _compute_sifende_departure_city_id(self):
         cities = self.env["l10n_py.sifende.city"]
@@ -72,8 +106,38 @@ class Transport(models.Model):
             )
 
 
+class TransportChild(models.AbstractModel):
+    _name = "l10n_py.sifende.transport.child"
+    _description = "Guarda de edición de los hijos del transporte"
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        transports = self.env["l10n_py.transport"].browse(
+            [vals["transport_id"] for vals in vals_list if vals.get("transport_id")]
+        )
+        transports._l10n_py_sifende_check_editable()
+        return super().create(vals_list)
+
+    def write(self, vals):
+        transports = self.transport_id | self.env["l10n_py.transport"].browse(
+            vals.get("transport_id")
+        )
+        transports._l10n_py_sifende_check_editable()
+        return super().write(vals)
+
+    def unlink(self):
+        self.transport_id._l10n_py_sifende_check_editable()
+        return super().unlink()
+
+
+class TransportVehicle(models.Model):
+    _name = "l10n_py.transport.vehicle"
+    _inherit = ["l10n_py.transport.vehicle", "l10n_py.sifende.transport.child"]
+
+
 class TransportDelivery(models.Model):
-    _inherit = "l10n_py.transport.delivery"
+    _name = "l10n_py.transport.delivery"
+    _inherit = ["l10n_py.transport.delivery", "l10n_py.sifende.transport.child"]
 
     # se completan desde la ciudad elegida, después del INSERT
     department = fields.Integer(required=False)

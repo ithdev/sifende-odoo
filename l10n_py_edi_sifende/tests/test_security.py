@@ -243,6 +243,96 @@ class TestSecurity(SifendeCommon):
         inutilization.with_user(manager).action_send()
         self.assertEqual(inutilization.state, "accepted")
 
+    # === Transportes entre empresas ===
+
+    def transport_of_other_company(self):
+        move = self.make_nre()
+        biller = self.make_user(
+            "facturador_transporte",
+            "account.group_account_invoice",
+            companies=self.other_company,
+        )
+        env = self.env(
+            user=biller, context={"allowed_company_ids": biller.company_ids.ids}
+        )
+        return move.l10n_py_transport_id, env
+
+    def test_un_facturador_no_modifica_transportes_de_otra_empresa(self):
+        transport, env = self.transport_of_other_company()
+        with self.assertRaises(AccessError):
+            transport.with_env(env).write({"driver_name": "Modificado"})
+        with self.assertRaises(AccessError):
+            transport.with_env(env).unlink()
+        self.assertEqual(transport.driver_name, "Carlos Benítez")
+
+    def test_un_facturador_no_modifica_vehiculos_ni_entregas_de_otra_empresa(self):
+        transport, env = self.transport_of_other_company()
+        vehicle, delivery = transport.vehicle_ids, transport.delivery_ids
+        with self.assertRaises(AccessError):
+            vehicle.with_env(env).write({"plate_number": "ZZZ999"})
+        with self.assertRaises(AccessError):
+            vehicle.with_env(env).unlink()
+        with self.assertRaises(AccessError):
+            delivery.with_env(env).write({"address": "Otra calle"})
+        with self.assertRaises(AccessError):
+            delivery.with_env(env).unlink()
+        with self.assertRaises(AccessError):
+            env["l10n_py.transport.vehicle"].create(
+                {
+                    "transport_id": transport.id,
+                    "vehicle_type": "CAMION",
+                    "brand": "ISUZU",
+                    "plate_number": "XYZ123",
+                }
+            )
+        self.assertEqual(vehicle.plate_number, "ABC1234")
+        self.assertTrue(delivery.exists())
+
+    def test_los_transportes_de_otra_empresa_no_se_leen(self):
+        transport, env = self.transport_of_other_company()
+        found = env["l10n_py.transport"].search([])
+        self.assertNotIn(transport, found)
+        with self.assertRaises(AccessError):
+            transport.with_env(env).driver_name  # noqa: B018
+
+    def test_el_acceso_al_transporte_es_a_la_empresa_activa(self):
+        transport, _env = self.transport_of_other_company()
+        user = self.make_user(
+            "multiempresa_transporte",
+            "account.group_account_invoice",
+            companies=self.company | self.other_company,
+        )
+        active = transport.with_user(user).with_context(
+            allowed_company_ids=self.other_company.ids
+        )
+        with self.assertRaises(AccessError):
+            active.write({"driver_name": "Modificado"})
+        transport.with_user(user).with_context(
+            allowed_company_ids=self.company.ids
+        ).write({"driver_name": "Modificado"})
+
+    def test_un_facturador_edita_el_transporte_de_su_empresa(self):
+        move = self.make_nre()
+        transport = move.l10n_py_transport_id
+        biller = self.make_user("facturador_propio", "account.group_account_invoice")
+        transport.with_user(biller).write({"driver_name": "Otro chofer"})
+        transport.vehicle_ids.with_user(biller).write({"plate_number": "ZZZ999"})
+        self.assertEqual(transport.vehicle_ids.plate_number, "ZZZ999")
+
+    def test_un_transporte_sin_documento_solo_lo_edita_quien_lo_creo(self):
+        creator = self.make_user("creador_transporte", "account.group_account_invoice")
+        colleague = self.make_user("colega_transporte", "account.group_account_invoice")
+        transport = (
+            self.env["l10n_py.transport"]
+            .with_user(creator)
+            .create(self.nre_transport_vals())
+        )
+        transport.write({"driver_name": "Otro chofer"})
+        with self.assertRaises(AccessError):
+            transport.with_user(colleague).write({"driver_name": "Modificado"})
+        with self.assertRaises(AccessError):
+            transport.vehicle_ids.with_user(colleague).unlink()
+
     # === Destino de la API key ===
 
     def test_la_url_es_del_mismo_grupo_que_la_api_key(self):
