@@ -137,4 +137,6 @@ class TestFrozenFiscal(SifendeCommon):
             for node in nodes:
                 if node.get("invisible") == "1":
                     continue
-                self.assertIn("accepted", node.get("readonly") or "", name)
+                self.assertIn(
+                    "l10n_py_sifende_frozen", node.get("readonly") or "", name
+                )

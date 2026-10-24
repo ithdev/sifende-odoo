@@ -89,6 +89,7 @@ class AccountMove(models.Model):
         readonly=True,
     )
     l10n_py_sifende_reintento_misma_clave = fields.Boolean(copy=False)
+    l10n_py_sifende_frozen = fields.Boolean(compute="_compute_l10n_py_sifende_frozen")
     l10n_py_sifende_envio_fallido = fields.Boolean(copy=False)
     l10n_py_sifende_numero_ocupado = fields.Boolean(copy=False, readonly=True)
     l10n_py_sifende_cdc_existente = fields.Char(copy=False, readonly=True)
@@ -312,38 +313,56 @@ class AccountMove(models.Model):
 
     def _l10n_py_sifende_frozen(self):
         self.ensure_one()
+        sent = self.l10n_py_cdc or self.l10n_py_edi_status in (
+            "sent",
+            "processing",
+            "accepted",
+        )
+        if sent and self._l10n_py_sifende_connector():
+            return True
+        return self._l10n_py_sifende_pending_send()
+
+    # sin CDC no se sabe si Sifende registró el original: el reintento reusa la clave
+    def _l10n_py_sifende_pending_send(self):
+        self.ensure_one()
         return bool(
-            (
-                self.l10n_py_cdc
-                or self.l10n_py_edi_status in ("sent", "processing", "accepted")
-            )
+            self.l10n_py_edi_status == "error"
+            and self.l10n_py_sifende_reintento_misma_clave
             and self._l10n_py_sifende_connector()
         )
 
+    @api.depends(
+        "company_id",
+        "l10n_py_cdc",
+        "l10n_py_edi_status",
+        "l10n_py_sifende_reintento_misma_clave",
+    )
+    def _compute_l10n_py_sifende_frozen(self):
+        for move in self:
+            move.l10n_py_sifende_frozen = move._l10n_py_sifende_frozen()
+
     def _l10n_py_sifende_frozen_error(self, fiscal=False, amounts=False):
-        name = self.l10n_py_cdc or self.name
         if amounts:
+            what = self.env._("Los importes y los datos de pago")
+        elif fiscal:
+            what = self.env._("Los datos fiscales")
+        else:
+            what = self.env._("Los datos de pago")
+        if self._l10n_py_sifende_pending_send() and not self.l10n_py_cdc:
             return UserError(
                 self.env._(
-                    "Los importes y los datos de pago de un documento enviado a "
-                    "Sifende no se pueden modificar: SIFEN ya tiene los del "
-                    "documento %(name)s.",
-                    name=name,
-                )
-            )
-        if fiscal:
-            return UserError(
-                self.env._(
-                    "Los datos fiscales de un documento enviado a Sifende no se "
-                    "pueden modificar: SIFEN ya tiene los del documento %(name)s.",
-                    name=name,
+                    "%(what)s de un documento con el envío a Sifende pendiente de "
+                    "confirmación no se pueden modificar: reintente el envío con "
+                    "«Reintentar».",
+                    what=what,
                 )
             )
         return UserError(
             self.env._(
-                "Los datos de pago de un documento enviado a Sifende no se pueden "
-                "modificar: SIFEN ya tiene los del documento %(name)s.",
-                name=name,
+                "%(what)s de un documento enviado a Sifende no se pueden modificar: "
+                "SIFEN ya tiene los del documento %(name)s.",
+                what=what,
+                name=self.l10n_py_cdc or self.name,
             )
         )
 
@@ -354,16 +373,21 @@ class AccountMove(models.Model):
             and self._l10n_py_sifende_connector()
         )
 
-    @api.depends("l10n_py_edi_status")
+    @api.depends("l10n_py_edi_status", "l10n_py_sifende_reintento_misma_clave")
     def _compute_show_reset_to_draft_button(self):
         res = super()._compute_show_reset_to_draft_button()
         for move in self:
-            if move.show_reset_to_draft_button and move._l10n_py_sifende_with_sifen():
+            if move.show_reset_to_draft_button and (
+                move._l10n_py_sifende_with_sifen()
+                or move._l10n_py_sifende_pending_send()
+            ):
                 move.show_reset_to_draft_button = False
         return res
 
     def button_draft(self):
         for move in self:
+            if move._l10n_py_sifende_pending_send():
+                raise move._l10n_py_sifende_frozen_error()
             if move._l10n_py_sifende_with_sifen():
                 raise UserError(
                     self.env._(
