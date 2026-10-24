@@ -1,11 +1,29 @@
 from odoo import api, fields, models
-from odoo.exceptions import ValidationError
+from odoo.exceptions import UserError, ValidationError
+
+REQUEST_FIELDS = ("authorization_id", "number_from", "number_to", "motive")
 
 
 class NumberInutilization(models.Model):
     _inherit = "l10n_py.number.inutilization"
 
     l10n_py_sifende_event_key = fields.Char(copy=False, readonly=True)
+
+    def write(self, vals):
+        changed = [name for name in REQUEST_FIELDS if name in vals]
+        for rec in self.filtered("l10n_py_sifende_event_key"):
+            if any(
+                rec._fields[name].convert_to_write(rec[name], rec) != vals[name]
+                for name in changed
+            ):
+                raise UserError(
+                    self.env._(
+                        "La inutilización tiene un envío pendiente de confirmación "
+                        "en Sifende: el timbrado, el rango y el motivo no se pueden "
+                        "cambiar. Envíela de nuevo tal como está o elimínela."
+                    )
+                )
+        return super().write(vals)
 
     def action_send(self):
         self.check_access("write")
