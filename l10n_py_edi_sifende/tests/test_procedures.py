@@ -213,6 +213,65 @@ class TestProcedures(SifendeCommon):
         self.assertEqual(inutilization.state, "accepted")
         self.assertFalse(inutilization.l10n_py_sifende_event_key)
 
+    def pending_inutilization(self):
+        inutilization = self.inutilization(
+            self.make_move("fe").l10n_py_invoice_number + 5
+        )
+        self.fake.add(
+            "POST", "/inutilizar$", problem("idempotency-upstream-unknown", 503)
+        )
+        with self.assertLogs(OCA_INUTILIZATION_LOGGER, "WARNING"):
+            self.fails(inutilization.action_send)
+        inutilization.state = "draft"
+        self.assertTrue(inutilization.l10n_py_sifende_event_key)
+        return inutilization
+
+    def test_una_inutilizacion_pendiente_no_cambia_su_solicitud(self):
+        inutilization = self.pending_inutilization()
+        number = inutilization.number_from
+        for values in (
+            {"number_from": number + 2, "number_to": number + 2},
+            {"number_to": number + 1},
+            {"motive": "Otro motivo distinto"},
+            {"authorization_id": self.auths["nc"].id},
+        ):
+            with self.subTest(values), self.assertRaisesRegex(UserError, "pendiente"):
+                inutilization.write(values)
+        self.assertEqual(inutilization.number_from, number)
+        self.assertEqual(inutilization.number_to, number)
+
+    def test_la_inutilizacion_pendiente_reenvia_el_rango_original(self):
+        inutilization = self.pending_inutilization()
+        number = inutilization.number_from
+        inutilization.write({"number_from": number, "motive": inutilization.motive})
+        self.fake.add("POST", "/inutilizar$", EVENT_OK)
+        inutilization.action_send()
+        call = self.fake.calls_to("POST", "/inutilizar$")[-1]
+        self.assertEqual(call.json["numeroInicio"], str(number).zfill(7))
+        self.assertEqual(inutilization.state, "accepted")
+
+    def test_una_inutilizacion_sin_clave_pendiente_se_edita(self):
+        inutilization = self.inutilization(5)
+        inutilization.write({"number_from": 6, "number_to": 7})
+        self.assertEqual(inutilization.quantity, 2)
+
+    def test_una_inutilizacion_rechazada_por_la_api_se_puede_corregir(self):
+        inutilization = self.inutilization(5)
+        self.fake.add("POST", "/inutilizar$", problem("validation-error", 400, "Dato"))
+        with self.assertLogs(OCA_INUTILIZATION_LOGGER, "WARNING"):
+            self.fails(inutilization.action_send)
+        inutilization.write({"state": "draft", "number_from": 6, "number_to": 6})
+        self.assertEqual(inutilization.number_from, 6)
+
+    def test_la_vista_de_la_inutilizacion_bloquea_la_solicitud_pendiente(self):
+        arch = self.env["l10n_py.number.inutilization"].get_view(view_type="form")[
+            "arch"
+        ]
+        tree = etree.fromstring(arch)
+        for name in ("authorization_id", "number_from", "number_to", "motive"):
+            node = tree.xpath(f"//field[@name='{name}']")[0]
+            self.assertIn("l10n_py_sifende_event_key", node.get("readonly"), name)
+
     def test_una_inutilizacion_rechazada_por_la_api_muestra_su_mensaje(self):
         inutilization = self.inutilization(5)
         self.fake.add(
