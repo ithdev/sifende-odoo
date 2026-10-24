@@ -428,6 +428,16 @@ class AccountMove(models.Model):
             data["sifende"] = self._l10n_py_sifende_extra_data()
         return data
 
+    def _prepare_invoice_lines(self):
+        items = super()._prepare_invoice_lines()
+        if self._l10n_py_sifende_connector():
+            lines = self.invoice_line_ids.filtered(
+                lambda line: line.display_type not in ("line_section", "line_note")
+            )
+            for item, line in zip(items, lines, strict=True):
+                item["sifende"] = self._l10n_py_sifende_item_data(line)
+        return items
+
     def _l10n_py_sifende_extra_data(self):
         self.ensure_one()
         code = self.l10n_latam_document_type_id.code
@@ -441,12 +451,6 @@ class AccountMove(models.Model):
                 "email": self.partner_id.email or None,
                 "codigoCliente": self.partner_id.ref or None,
             },
-            "items": [
-                self._l10n_py_sifende_item_data(line)
-                for line in self.invoice_line_ids.filtered(
-                    lambda line: line.display_type not in ("line_section", "line_note")
-                )
-            ],
         }
         if self.l10n_py_payment_type in PAYMENT_CARDS and (
             self.l10n_py_sifende_tarjeta_marca

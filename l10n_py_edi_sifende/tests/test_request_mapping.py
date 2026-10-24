@@ -421,10 +421,19 @@ class TestRequestMapping(SifendeCommon):
                 self.credit(30000.0, 60000.0), {"montoTotal": 100000.0}, 0
             )
 
-    def test_unos_items_desalineados_con_sus_datos_extra_no_se_ocultan(self):
-        items = [{"codigo": "A"}, {"codigo": "B"}]
+    def test_cada_item_lleva_sus_datos_de_sifende(self):
+        section = {"display_type": "line_section", "name": "Sección"}
+        lines = [
+            self.line(price=10000.0, discount=10.0),
+            section,
+            self.line(self.product_kg, price=5000.0),
+        ]
+        data = self.make_move("fe", lines=lines)._prepare_edi_document_data()
+        self.assertNotIn("items", data["sifende"])
         self.assertEqual(
-            len(list(SifendeRequestBuilder._zip_items({"items": items}, {}))), 2
+            [item["sifende"]["precioUnitario"] for item in data["items"]],
+            [10000.0, 5000.0],
         )
-        with self.assertRaises(ValueError):
-            list(SifendeRequestBuilder._zip_items({"items": items}, {"items": [{}]}))
+        self.assertEqual(
+            data["items"][0]["sifende"]["descuentoParticularPorcentaje"], 10.0
+        )

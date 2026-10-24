@@ -49,6 +49,10 @@ def _phone(value):
     return cleaned if 6 <= len(cleaned) <= 15 else None
 
 
+def _extra(entity):
+    return entity.get("sifende") or {}
+
+
 class SifendeRequestBuilder:
     """Traduce el dict de `_prepare_edi_document_data` al request de Sifende."""
 
@@ -119,8 +123,7 @@ class SifendeRequestBuilder:
         request = {
             "receptor": self._receptor(data, extra),
             "items": [
-                self._item(item, extra_item, data["moneda"])
-                for item, extra_item in self._zip_items(data, extra)
+                self._item(item, data["moneda"]) for item in data.get("items") or []
             ],
         }
         if code == 1:
@@ -148,13 +151,8 @@ class SifendeRequestBuilder:
                 request["documentoAsociado"] = documents[0]
         return request
 
-    @staticmethod
-    def _zip_items(data, extra):
-        items = data.get("items") or []
-        extras = extra.get("items") or [{}] * len(items)
-        return zip(items, extras, strict=True)
-
-    def _item(self, item, extra_item, currency):
+    def _item(self, item, currency):
+        extra_item = _extra(item)
         unit_code = extra_item.get("unidadMedida") or item.get("unidadMedida") or 77
         iva_type = int(item["ivaTipo"])
         result = {
@@ -411,13 +409,13 @@ class SifendeRequestBuilder:
                     "descripcion": item["descripcion"],
                     "cantidad": _number(item["cantidad"]),
                     "unidadMedida": self._name(
-                        "unidadMedida", extra_item.get("unidadMedida") or 77
+                        "unidadMedida", _extra(item).get("unidadMedida") or 77
                     ),
                     "ncm": item["ncm"]
                     if NCM_RE.match(str(item.get("ncm") or ""))
                     else None,
                 }
-                for item, extra_item in self._zip_items(data, extra)
+                for item in data.get("items") or []
             ],
             "motivoTraslado": self._name("motivoTraslado", motive),
             "responsableEmision": self._name(
@@ -458,25 +456,21 @@ class SifendeRequestBuilder:
             result["salida"] = self._local(transport["salida"], extra.get("salida"))
         if transport.get("entregas"):
             result["entregas"] = [
-                self._local(delivery, geography)
-                for delivery, geography in zip(
-                    transport["entregas"], extra.get("entregas") or [], strict=True
-                )
+                self._local(delivery, _extra(delivery))
+                for delivery in transport["entregas"]
             ]
         if transport.get("vehiculos"):
-            vehicles = transport["vehiculos"]
-            extras = extra.get("vehiculos") or [{}] * len(vehicles)
             result["vehiculos"] = [
                 {
                     "tipoVehiculo": v.get("tipo"),
                     "marca": v.get("marca"),
                     "tipoIdentificacion": PRINTED_DOC_VEHICLE_PLATE,
                     "matricula": (v.get("numero") or "").strip(),
-                    "numeroVuelo": extra_vehicle.get("numeroVuelo")
+                    "numeroVuelo": _extra(v).get("numeroVuelo")
                     if mode == AIR_TRANSPORT
                     else None,
                 }
-                for v, extra_vehicle in zip(vehicles, extras, strict=True)
+                for v in transport["vehiculos"]
             ]
         if transport.get("transportista"):
             result["transportista"] = self._transportista(
@@ -578,21 +572,24 @@ class SifendeRequestBuilder:
                     "descripcion": item["descripcion"],
                     "cantidad": _number(item["cantidad"]),
                     "unidadMedida": self._name(
-                        "unidadMedida", extra_item.get("unidadMedida") or 77
+                        "unidadMedida", _extra(item).get("unidadMedida") or 77
                     ),
                     "precioUnitario": _number(
                         round(
                             item["precioUnitario"]
                             * (
                                 1
-                                - (extra_item.get("descuentoParticularPorcentaje") or 0)
+                                - (
+                                    _extra(item).get("descuentoParticularPorcentaje")
+                                    or 0
+                                )
                                 / 100
                             ),
                             8,
                         )
                     ),
                 }
-                for item, extra_item in self._zip_items(data, extra)
+                for item in data.get("items") or []
             ],
         }
 
