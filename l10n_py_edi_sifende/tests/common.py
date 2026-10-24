@@ -273,8 +273,9 @@ class SifendeCommon(TransactionCase):
             cls.auths[key] = cls.env["account.authorization"].create(
                 {
                     "name": STAMP,
-                    "date_from": today - timedelta(days=30),
-                    "date_to": today + timedelta(days=335),
+                    # cubre FIXED_DATE y hoy, para que los tests no venzan
+                    "date_from": min(today, FIXED_DATE) - timedelta(days=30),
+                    "date_to": max(today, FIXED_DATE) + timedelta(days=335),
                     "invoice_number_from": 1,
                     "invoice_number_to": 9999999,
                     "establishment": "001",
