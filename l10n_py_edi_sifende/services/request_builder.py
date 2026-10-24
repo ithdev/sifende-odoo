@@ -16,6 +16,7 @@ SIFEN_CARD_PROCESSING_OTHER = 9
 CARD_PAYMENT_TYPES = (3, 4)
 CHEQUE_PAYMENT_TYPE = 2
 PRINTED_DOC_VEHICLE_PLATE = 2
+AIR_TRANSPORT = "AEREO"
 
 NCM_RE = re.compile(r"^(?=.*[1-9])\d{6,8}$")
 PYG_ROUNDING_STEP = Decimal(50)
@@ -118,7 +119,7 @@ class SifendeRequestBuilder:
         request = {
             "receptor": self._receptor(data, extra),
             "items": [
-                self._item(item, extra_item)
+                self._item(item, extra_item, data["moneda"])
                 for item, extra_item in self._zip_items(data, extra)
             ],
         }
@@ -153,7 +154,7 @@ class SifendeRequestBuilder:
         extras = extra.get("items") or [{}] * len(items)
         return zip(items, extras, strict=True)
 
-    def _item(self, item, extra_item):
+    def _item(self, item, extra_item, currency):
         unit_code = extra_item.get("unidadMedida") or item.get("unidadMedida") or 77
         iva_type = int(item["ivaTipo"])
         result = {
@@ -166,16 +167,26 @@ class SifendeRequestBuilder:
             ),
             "afectacionTributaria": self._name("afectacionIVA", iva_type),
             "tasaIVA": int(item["iva"]),
-            "descuentoParticularPorcentaje": extra_item.get(
-                "descuentoParticularPorcentaje"
-            ),
         }
+        result.update(self._discount(result["precioUnitario"], extra_item, currency))
         if iva_type == 4:
             result["propIVA"] = _number(item["ivaBase"])
         ncm = str(item.get("ncm") or "")
         if NCM_RE.match(ncm):
             result["ncm"] = ncm
         return result
+
+    @staticmethod
+    def _discount(unit_price, extra_item, currency):
+        percent = extra_item.get("descuentoParticularPorcentaje")
+        if not percent:
+            return {}
+        # en PYG Sifende redondea a entero el descuento derivado del porcentaje
+        amount = Decimal(str(unit_price)) * Decimal(str(percent)) / 100
+        amount = amount.quantize(Decimal(10) ** -8, ROUND_HALF_UP)
+        if currency == PYG and amount != amount.quantize(Decimal(1), ROUND_HALF_UP):
+            return {"descuentoParticular": _number(float(amount))}
+        return {"descuentoParticularPorcentaje": percent}
 
     def _receptor(self, data, extra, address_required=False):
         customer = data["cliente"]
@@ -218,7 +229,7 @@ class SifendeRequestBuilder:
         if client_code and 3 <= len(client_code) <= 15:
             receptor["codigoCliente"] = client_code
         if operation != 4:
-            self._receptor_location(receptor, customer, extra_customer)
+            self._receptor_location(receptor, extra_customer)
             if not (
                 address and receptor.get("departamento") and receptor.get("ciudad")
             ):
@@ -235,7 +246,7 @@ class SifendeRequestBuilder:
                 receptor.pop("numeroCasa", None)
         return receptor
 
-    def _receptor_location(self, receptor, customer, extra_customer):
+    def _receptor_location(self, receptor, extra_customer):
         geography = extra_customer.get("geografia")
         if geography:
             receptor["departamento"] = self._name(
@@ -243,17 +254,6 @@ class SifendeRequestBuilder:
             )
             receptor["codigoDistrito"] = geography["distrito"]
             receptor["ciudad"] = str(geography["ciudad"])
-        elif customer.get("departamento"):
-            city = (
-                extra_customer.get("ciudad")
-                or customer.get("ciudadDescripcion")
-                or customer.get("ciudad")
-            )
-            if city:
-                receptor["departamento"] = self._name(
-                    "departamento", customer["departamento"]
-                )
-                receptor["ciudad"] = str(city)
 
     def _condicion(self, data, extra):
         condition = data["condicion"]
@@ -439,8 +439,9 @@ class SifendeRequestBuilder:
 
     def _transporte(self, transport, extra=None):
         extra = extra or {}
+        mode = self._name("modalidadTransporte", transport["modalidad"])
         result = {
-            "modalidad": self._name("modalidadTransporte", transport["modalidad"]),
+            "modalidad": mode,
             "incoterm": transport.get("condicionNegociacion"),
             "numeroManifiesto": transport.get("numeroManifiesto"),
             "numeroDespachoImportacion": extra.get("numeroDespachoImportacion"),
@@ -463,14 +464,19 @@ class SifendeRequestBuilder:
                 )
             ]
         if transport.get("vehiculos"):
+            vehicles = transport["vehiculos"]
+            extras = extra.get("vehiculos") or [{}] * len(vehicles)
             result["vehiculos"] = [
                 {
                     "tipoVehiculo": v.get("tipo"),
                     "marca": v.get("marca"),
                     "tipoIdentificacion": PRINTED_DOC_VEHICLE_PLATE,
                     "matricula": (v.get("numero") or "").strip(),
+                    "numeroVuelo": extra_vehicle.get("numeroVuelo")
+                    if mode == AIR_TRANSPORT
+                    else None,
                 }
-                for v in transport["vehiculos"]
+                for v, extra_vehicle in zip(vehicles, extras, strict=True)
             ]
         if transport.get("transportista"):
             result["transportista"] = self._transportista(
@@ -526,14 +532,23 @@ class SifendeRequestBuilder:
         doc_type = int(auto["tipoDocumentoVendedor"])
         nature = 1 if doc_type in (1, 4) else 2
         payment = (data["condicion"].get("entregas") or [{}])[0]
+        payment_type = int(payment.get("tipo") or 1)
+        amount = self._distribute(
+            [payment.get("monto") or extra.get("montoTotal") or 0],
+            self._fiscal_total(extra, currency, decimals),
+            decimals,
+        )[0]
         condition_payment = {
             "tipo": self._name("condicionOperacion", 1),
-            "tipoPago": self._name("tipoPago", payment.get("tipo") or 1),
+            "tipoPago": self._name("tipoPago", payment_type),
             "monedaPago": currency,
-            "montoPago": _money(
-                payment.get("monto") or extra.get("montoTotal") or 0, decimals
-            ),
+            "montoPago": amount,
         }
+        if payment_type == CHEQUE_PAYMENT_TYPE:
+            cheque = payment["cheque"]
+            # la autofactura exige 8 dígitos exactos; la factura los completa Sifende
+            condition_payment["numeroCheque"] = cheque["numeroCheque"].zfill(8)
+            condition_payment["bancoCheque"] = cheque["bancoCheque"].strip()
         if currency != PYG and data.get("tipoCambio"):
             condition_payment["tipoCambio"] = _number(data["tipoCambio"])
         return {

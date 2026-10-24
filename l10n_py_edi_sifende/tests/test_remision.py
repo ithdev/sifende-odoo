@@ -205,6 +205,39 @@ class TestRemisionYAutofactura(SifendeCommon):
         move.l10n_py_transport_id.vehicle_ids.write({"plate_number": "AB1"})
         self.assertIn("matrícula del vehículo 1", self.errors(move))
 
+    def air_vehicles(self, flight="LA1234"):
+        return [
+            (
+                0,
+                0,
+                {
+                    "vehicle_type": "AVION",
+                    "brand": "BOEING",
+                    "plate_number": "ABC1234",
+                    "sifende_flight_number": flight,
+                },
+            )
+        ]
+
+    def test_una_nota_aerea_lleva_el_numero_de_vuelo(self):
+        move = self.make_nre(transport_mode="3", vehicle_ids=self.air_vehicles())
+        vehicle = self.sent_payload(move)["transporte"]["vehiculos"][0]
+        self.assertEqual(vehicle["numeroVuelo"], "LA1234")
+
+    def test_una_nota_terrestre_no_lleva_numero_de_vuelo(self):
+        move = self.make_nre(vehicle_ids=self.air_vehicles())
+        vehicle = self.sent_payload(move)["transporte"]["vehiculos"][0]
+        self.assertNotIn("numeroVuelo", vehicle)
+
+    def test_una_nota_aerea_sin_numero_de_vuelo_se_avisa(self):
+        move = self.make_nre(transport_mode="3", vehicle_ids=self.air_vehicles(False))
+        self.assertIn("número de vuelo del vehículo 1", self.errors(move))
+        self.assertFalse(self.fake.calls_to("POST", r"^/documento-electronico$"))
+
+    def test_una_nota_aerea_con_un_numero_de_vuelo_de_largo_incorrecto(self):
+        move = self.make_nre(transport_mode="3", vehicle_ids=self.air_vehicles("LA12"))
+        self.assertIn("número de vuelo del vehículo 1", self.errors(move))
+
     def test_una_nota_con_agente_intermediario_exige_sus_datos(self):
         move = self.make_nre(freight_responsibility="4")
         message = self.errors(move)
