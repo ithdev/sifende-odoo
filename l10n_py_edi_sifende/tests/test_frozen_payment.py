@@ -3,7 +3,7 @@ from lxml import etree
 from odoo.exceptions import UserError
 from odoo.tests import tagged
 
-from .common import CDC, SifendeCommon
+from .common import CDC, SifendeCommon, problem
 
 
 @tagged("post_install", "-at_install", "l10n_py_edi_sifende")
@@ -123,4 +123,78 @@ class TestFrozenPayment(SifendeCommon):
             "l10n_py_sifende_cheque_banco",
         ):
             node = tree.xpath(f"//field[@name='{name}']")[0]
-            self.assertIn("processing", node.get("readonly"), name)
+            self.assertIn("l10n_py_sifende_frozen", node.get("readonly"), name)
+
+    # === Envío con resultado incierto ===
+
+    def uncertain(self, move):
+        self.route_emission(problem("internal-error", 503))
+        move.action_send_edi()
+        self.assertEqual(move.l10n_py_edi_status, "error")
+        self.assertFalse(move.l10n_py_cdc)
+        self.assertTrue(move.l10n_py_sifende_reintento_misma_clave)
+        return move
+
+    def test_tras_un_envio_incierto_los_datos_de_pago_quedan_congelados(self):
+        move = self.uncertain(self.cheque_move())
+        with self.assertRaisesRegex(UserError, "datos de pago"):
+            move.l10n_py_payment_type = "5"
+        with self.assertRaisesRegex(UserError, "datos de pago"):
+            move.l10n_py_sifende_cheque_banco = "Banco Itaú"
+        with self.assertRaisesRegex(UserError, "datos de pago"):
+            move.invoice_payment_term_id = self.term()
+        self.assertEqual(move.l10n_py_payment_type, "2")
+
+    def test_tras_un_envio_incierto_los_datos_fiscales_quedan_congelados(self):
+        move = self.uncertain(self.make_move("fe"))
+        with self.assertRaisesRegex(UserError, "fiscales"):
+            move.l10n_py_presence_type = "3"
+
+    def test_tras_un_envio_incierto_no_se_vuelve_a_borrador(self):
+        move = self.uncertain(self.make_move("fe"))
+        self.assertFalse(move.show_reset_to_draft_button)
+        with self.assertRaisesRegex(UserError, "pendiente"):
+            move.button_draft()
+        self.assertEqual(move.state, "posted")
+
+    def test_el_reintento_tras_un_envio_incierto_reenvia_el_mismo_payload(self):
+        move = self.uncertain(self.cheque_move())
+        first = self.fake.calls_to("POST", r"^/documento-electronico$")[-1]
+        self.route_emission(self.emission_response())
+        move.action_retry_edi()
+        retry = self.fake.calls_to("POST", r"^/documento-electronico$")[-1]
+        self.assertEqual(
+            retry.headers["Idempotency-Key"], first.headers["Idempotency-Key"]
+        )
+        self.assertEqual(retry.json, first.json)
+
+    def test_un_rechazo_definitivo_tras_el_envio_incierto_descongela_el_documento(self):
+        move = self.uncertain(self.cheque_move())
+        self.route_emission(problem("validation-error", 400, "Dato inválido"))
+        move.action_retry_edi()
+        self.assertEqual(move.l10n_py_edi_status, "rejected")
+        self.assertFalse(move.l10n_py_sifende_frozen)
+        move.l10n_py_payment_type = "1"
+        self.assertEqual(move.l10n_py_payment_type, "1")
+
+    def test_la_vista_y_el_predicado_comparten_la_regla_de_congelacion(self):
+        move = self.make_move("fe")
+        self.assertFalse(move.l10n_py_sifende_frozen)
+        self.uncertain(move)
+        self.assertTrue(move.l10n_py_sifende_frozen)
+        self.assertEqual(move.l10n_py_sifende_frozen, move._l10n_py_sifende_frozen())
+        accepted = self.make_move("fe")
+        accepted.write({"l10n_py_edi_status": "accepted", "l10n_py_cdc": CDC})
+        self.assertTrue(accepted.l10n_py_sifende_frozen)
+        self.connector.unlink()
+        accepted.invalidate_recordset(["l10n_py_sifende_frozen"])
+        self.assertFalse(accepted.l10n_py_sifende_frozen)
+
+    def test_ninguna_vista_repite_la_condicion_de_congelacion(self):
+        for xml_id in (
+            "l10n_py_edi_sifende.view_move_form_edi_sifende",
+            "l10n_py_edi_sifende.view_move_form_edi_sifende_remision",
+        ):
+            arch = self.env.ref(xml_id).arch
+            self.assertNotIn("l10n_py_edi_status in ['sent', 'processing'", arch)
+            self.assertNotIn("l10n_py_cdc or l10n_py_edi_status", arch)

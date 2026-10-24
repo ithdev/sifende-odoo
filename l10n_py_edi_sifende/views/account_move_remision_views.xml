@@ -23,7 +23,7 @@
             >
                 <field
                     name="l10n_py_sifende_afe_vendor_city_id"
-                    readonly="l10n_py_cdc or l10n_py_edi_status in ['sent', 'processing', 'accepted']"
+                    readonly="l10n_py_sifende_frozen"
                 />
             </xpath>
             <xpath
@@ -32,7 +32,7 @@
             >
                 <field
                     name="l10n_py_sifende_afe_provision_city_id"
-                    readonly="l10n_py_cdc or l10n_py_edi_status in ['sent', 'processing', 'accepted']"
+                    readonly="l10n_py_sifende_frozen"
                 />
             </xpath>
             <xpath
