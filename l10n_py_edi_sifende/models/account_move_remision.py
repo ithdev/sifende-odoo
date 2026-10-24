@@ -121,6 +121,22 @@ class AccountMove(models.Model):
             )
         return city._sifende_codes() if city else None
 
+    def _prepare_transport_data(self):
+        data = super()._prepare_transport_data()
+        if self._l10n_py_sifende_connector():
+            transport = self.l10n_py_transport_id
+            for entry, delivery in zip(
+                data.get("entregas", []), transport.delivery_ids, strict=True
+            ):
+                entry["sifende"] = self._l10n_py_sifende_codes(delivery.city)
+            for entry, vehicle in zip(
+                data.get("vehiculos", []), transport.vehicle_ids, strict=True
+            ):
+                entry["sifende"] = {
+                    "numeroVuelo": vehicle.sifende_flight_number or None
+                }
+        return data
+
     def _l10n_py_sifende_transport_data(self):
         transport = self.l10n_py_transport_id
         carrier = {
@@ -136,15 +152,7 @@ class AccountMove(models.Model):
         return {
             "numeroDespachoImportacion": transport.sifende_import_dispatch or None,
             "salida": self._l10n_py_sifende_codes(transport.departure_city),
-            "entregas": [
-                self._l10n_py_sifende_codes(delivery.city)
-                for delivery in transport.delivery_ids
-            ],
             "transportista": {key: value for key, value in carrier.items() if value},
-            "vehiculos": [
-                {"numeroVuelo": vehicle.sifende_flight_number or None}
-                for vehicle in transport.vehicle_ids
-            ],
         }
 
     # === Constancia de la autofactura como documento asociado ===

@@ -43,6 +43,7 @@ class TestOtherProviders(SifendeCommon):
     def test_el_diccionario_no_lleva_la_clave_sifende(self):
         data = self.make_move("fe")._prepare_edi_document_data()
         self.assertNotIn("sifende", data)
+        self.assertNotIn("sifende", data["items"][0])
 
     def test_el_envio_sigue_el_flujo_sincronico_de_oca(self):
         move = self.make_move("fe")
