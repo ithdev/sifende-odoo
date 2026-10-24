@@ -9,6 +9,7 @@ from odoo.tests.common import TransactionCase
 from odoo.tools import mute_logger
 
 from odoo.addons.l10n_py_edi_sifende.models import edi_connector
+from odoo.addons.l10n_py_edi_sifende.services.client import clear_enum_cache
 
 FIXTURES = Path(__file__).parent / "fixtures"
 API_KEY = "sk_test_clave-ficticia"
@@ -299,7 +300,7 @@ class SifendeCommon(TransactionCase):
         super().setUp()
         if not type(self)._registry_patched:
             self.registry_enter_test_mode()
-        self.env["l10n_py.edi.connector"]._sifende_clear_enum_cache()
+        clear_enum_cache()
         self.enums = copy.deepcopy(self.enums_fixture)
         self.fake = FakeSifende()
         self.fake.add("GET", r"/public/enums$", FakeResponse(200, self.enums))
@@ -313,7 +314,7 @@ class SifendeCommon(TransactionCase):
         mute = mute_logger("odoo.addons.l10n_py_edi_base.models.l10n_py_edi_log")
         mute.__enter__()
         self.addCleanup(mute.__exit__, None, None, None)
-        self.addCleanup(self.env["l10n_py.edi.connector"]._sifende_clear_enum_cache)
+        self.addCleanup(clear_enum_cache)
 
     # === Documentos ===
 

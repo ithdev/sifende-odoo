@@ -6,11 +6,8 @@ from datetime import datetime, timedelta
 from odoo import SUPERUSER_ID, api, fields, models
 from odoo.exceptions import UserError
 
-from .edi_connector import (
-    APPROVED_STATES,
-    KUDE_MAX_WAIT,
-    SifendeTransportError,
-)
+from ..services.client import SifendeTransportError
+from .edi_connector import APPROVED_STATES, KUDE_MAX_WAIT
 
 _logger = logging.getLogger(__name__)
 

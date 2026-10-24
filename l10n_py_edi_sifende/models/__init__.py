@@ -1,4 +1,5 @@
 from . import edi_connector
+from . import edi_connector_webhook
 from . import l10n_py_edi_log
 from . import account_move
 from . import account_move_line

@@ -7,6 +7,7 @@ from odoo.exceptions import AccessError, UserError
 from odoo.tests import tagged
 
 from odoo.addons.l10n_py_edi_sifende.models import edi_connector
+from odoo.addons.l10n_py_edi_sifende.services import client
 
 from .common import API_KEY, CDC, STAMP, FakeResponse, SifendeCommon
 
@@ -246,7 +247,7 @@ class TestConnector(SifendeCommon):
         now = [1000.0]
         with patch.object(edi_connector.time, "monotonic", side_effect=lambda: now[0]):
             self.make_move("fe").action_send_edi()
-            now[0] += edi_connector.ENUM_CACHE_TTL - 1
+            now[0] += client.ENUM_CACHE_TTL - 1
             self.make_move("fe").action_send_edi()
             self.assertEqual(len(self.fake.calls_to("GET", "/public/enums$")), 1)
             now[0] += 2
@@ -254,7 +255,7 @@ class TestConnector(SifendeCommon):
         self.assertEqual(len(self.fake.calls_to("GET", "/public/enums$")), 2)
 
     def test_el_catalogo_no_lleva_credenciales(self):
-        self.connector._sifende_enums()
+        self.connector._sifende_client().enums()
         call = self.fake.calls_to("GET", "/public/enums$")[0]
         self.assertNotIn("Authorization", call.headers)
 
