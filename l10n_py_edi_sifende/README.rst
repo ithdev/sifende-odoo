@@ -43,17 +43,9 @@ hace falta cargar certificado, CSC ni la librería ``sifen`` en Odoo.
 Documentos admitidos: factura (FE), nota de crédito (NCE), nota de
 débito (NDE), nota de remisión (NRE) y autofactura (AFE).
 
-El envío es asincrónico. Al enviar, el documento queda en estado
-«Procesando» con su CDC y su QR. Sifende avisa por webhook cuando SIFEN
-responde, y un cron que consulta cada 5 minutos sirve de respaldo;
-cuando SIFEN aprueba, el documento queda «Aceptado» con el XML firmado y
-el KuDE adjuntos.
-
-El cron también vuelve a consultar cada hora los documentos aceptados
-dentro de su plazo de cancelación, por si se cancelaron en Sifende y se
-perdió el aviso. En cada ejecución consulta hasta 200 documentos por
-conector, empezando por los que hace más tiempo no se consultan, sea de
-la empresa que sea, para que ninguna se quede sin turno.
+El envío es asincrónico: el documento queda «Procesando» con su CDC y su
+QR, y pasa a «Aceptado», con el XML firmado y el KuDE adjuntos, cuando
+SIFEN lo aprueba.
 
 **Table of contents**
 
@@ -63,28 +55,28 @@ la empresa que sea, para que ninguna se quede sin turno.
 Configuration
 =============
 
-1. En Sifende, cree una API key del ambiente que corresponda (Sandbox,
+1. En Sifende, creá una API key del ambiente que corresponda (Sandbox,
    Pruebas o Producción).
-2. En *Facturación electrónica > Conectores*, cree un conector con
+2. En *Facturación electrónica > Conectores*, creá un conector con
    proveedor **Sifende**. Solo se admite un conector por empresa.
-3. Elija el ambiente del conector (*Pruebas* o *Producción*), pegue la
-   API key y, si usa un entorno propio de Sifende, cambie la URL base
+3. Elegí el ambiente del conector (*Pruebas* o *Producción*), pegá la
+   API key y, si usás un entorno propio de Sifende, cambiá la URL base
    (HTTPS; HTTP solo se admite para ``localhost``). La API key y la URL
    base solo las ven y editan los administradores (*Ajustes*): la URL
    decide adónde viaja la clave.
-4. Pulse **Probar Conexión**. Falla si el ambiente del conector no
+4. Pulsá **Probar Conexión**. Falla si el ambiente del conector no
    coincide con el de la API key (``sk_live_`` es Producción;
    ``sk_sandbox_`` y ``sk_test_``, Pruebas; esa coincidencia también se
    valida al guardar el conector y antes de enviar, cancelar o
    inutilizar), y advierte si el timbrado, el establecimiento o el punto
    de expedición de Odoo no existen en Sifende.
-5. Cargue en Sifende el mismo timbrado que usa Odoo. Se recomienda un
+5. Cargá en Sifende el mismo timbrado que usa Odoo. Se recomienda un
    punto de expedición exclusivo para Odoo: Sifende acepta el número de
    documento que manda Odoo y rechaza los que ya están en uso.
 6. Opcional: en *Inventario > Configuración > Unidades de medida*,
-   ajuste el *Código de unidad de medida SIFEN* de cada unidad (por
+   ajustá el *Código de unidad de medida SIFEN* de cada unidad (por
    defecto 77, unidad).
-7. Opcional pero recomendado: pulse **Registrar webhook** para que
+7. Opcional pero recomendado: pulsá **Registrar webhook** para que
    Sifende avise a Odoo apenas SIFEN responde, sin esperar al cron. Odoo
    debe ser accesible desde Internet por HTTPS y su URL base
    (``web.base.url``, en *Ajustes > Técnico > Parámetros del sistema*)
@@ -96,7 +88,7 @@ Configuration
    los administradores. Si la URL ya estaba registrada en Sifende, el
    botón lo informa y hay que pulsar **Rotar secreto** para obtener un
    secreto. Si el webhook ya no existe en Sifende, **Rotar secreto** lo
-   olvida y avisa: pulse **Registrar webhook**. **Quitar webhook** lo
+   olvida y avisa: pulsá **Registrar webhook**. **Quitar webhook** lo
    elimina en Sifende. Cada aviso solo dispara una consulta del estado
    vigente en Sifende, así que un aviso atrasado no pisa el estado real.
    El cron sigue activo como respaldo.
@@ -116,7 +108,7 @@ Configuration
 Usage
 =====
 
-1.  Confirme la factura y pulse **Enviar a EDI** (solo se envían
+1.  Confirmá la factura y pulsá **Enviar a EDI** (solo se envían
     documentos publicados). El documento pasa a *Procesando*. Una vez
     enviado, los datos de pago (tipo de pago, cheque, tarjeta, condición
     de pago y vencimientos) y los datos fiscales de la pestaña
@@ -130,10 +122,15 @@ Usage
     adjuntos, o *Rechazado* con los mensajes de SIFEN en el campo
     *Mensaje EDI*. Si el webhook está registrado, Sifende avisa a Odoo
     en cuanto SIFEN responde; si no, o si el aviso se pierde, lo hace el
-    cron «Sifende: verificar estado de documentos» (cada 5 minutos).
+    cron «Sifende: verificar estado de documentos» (cada 5 minutos). El
+    mismo cron vuelve a consultar cada hora los documentos aceptados
+    dentro de su plazo de cancelación, por si se cancelaron en Sifende y
+    se perdió el aviso. En cada ejecución consulta hasta 200 documentos
+    por conector, empezando por los que hace más tiempo no se consultan,
+    sea de la empresa que sea, para que ninguna se quede sin turno.
 
 3.  Si el documento queda con *Rechazado* antes de llegar a SIFEN (por
-    ejemplo por un campo obligatorio), corrija el dato y pulse
+    ejemplo por un campo obligatorio), corregí el dato y pulsá
     **Reintentar**: usa una clave de idempotencia nueva. Si queda con
     *Error* por un fallo de conexión o de Sifende antes de registrar el
     documento (el mensaje lo indica), **Reintentar** usa la misma clave
@@ -141,19 +138,19 @@ Usage
     sus datos no se modifican, para que el reintento envíe exactamente
     lo mismo. Si el *Error* es un fallo definitivo del envío a SIFEN, el
     documento ya tiene CDC y número tomados: **Reintentar** no lo
-    reemite y muestra el procedimiento. Reintente el lote desde el panel
-    de Sifende o pídalo a soporte; Odoo consulta el documento cada hora
-    y lo actualiza solo (*Procesando* y luego *Aceptado*) cuando vuelve
-    a procesarse con el mismo CDC.
+    reemite y muestra el procedimiento. Reintentá el lote desde el panel
+    de Sifende o pedíselo a soporte; Odoo consulta el documento cada
+    hora y lo actualiza solo (*Procesando* y luego *Aceptado*) cuando
+    vuelve a procesarse con el mismo CDC.
 
-4.  En una nota de crédito o de débito, elija el *Motivo de emisión* en
+4.  En una nota de crédito o de débito, elegí el *Motivo de emisión* en
     la pestaña *Facturación electrónica*. El documento asociado se
     completa solo con el CDC de la factura de origen cuando esta ya lo
-    tiene. En una nota de remisión, indique también el responsable de la
+    tiene. En una nota de remisión, indicá también el responsable de la
     emisión y los kilómetros del recorrido.
 
 5.  Si una factura o autofactura al contado se paga con *Cheque* (*Tipo
-    de Pago* en la pestaña *Facturación electrónica*), complete el
+    de Pago* en la pestaña *Facturación electrónica*), completá el
     número del cheque (solo dígitos, hasta 8) y el banco (de 4 a 20
     caracteres): Sifende los exige. Con tarjeta, la *Marca de la
     tarjeta* es obligatoria (*Otra* si no figura en la lista).
@@ -161,19 +158,19 @@ Usage
 6.  Si SIFEN rechaza un documento ya enviado (*Rechazado* con el CDC
     cargado), Sifende no permite reenviar ese número ni con los mismos
     datos, y **Reintentar** muestra el procedimiento en lugar de enviar.
-    Con el rol *Contabilidad > Administrador*, abra *Facturación
+    Con el rol *Contabilidad > Administrador*, abrí *Facturación
     Electrónica > Inutilización de números* (dentro de la aplicación de
-    Facturación o Contabilidad), cree la inutilización con el timbrado y
-    el número del documento rechazado, y pulse **Enviar al SIFEN**.
-    Luego pulse **Restablecer a borrador** y **Cancelar** en el
-    documento rechazado y emita uno nuevo, que recibe el número
+    Facturación o Contabilidad), creá la inutilización con el timbrado y
+    el número del documento rechazado, y pulsá **Enviar al SIFEN**.
+    Luego pulsá **Restablecer a borrador** y **Cancelar** en el
+    documento rechazado y emití uno nuevo, que recibe el número
     siguiente. Odoo solo permite inutilizar números sin documento o de
     documentos rechazados. Si Sifende no respondió, **Enviar al SIFEN**
     reutiliza la misma solicitud: mientras tanto el timbrado, el rango y
-    el motivo no se pueden cambiar. Para pedir otro rango, elimine la
-    inutilización y cree una nueva.
+    el motivo no se pueden cambiar. Para pedir otro rango, eliminá la
+    inutilización y creá una nueva.
 
-7.  Para cancelar un documento aceptado, pulse **Cancelar EDI**: se abre
+7.  Para cancelar un documento aceptado, pulsá **Cancelar EDI**: se abre
     el asistente «Cancelar documento electrónico», donde se escribe el
     motivo (se envía a SIFEN) y se confirma con **Cancelar Documento**.
     Hace falta el rol *Contabilidad > Facturación* y estar dentro del
@@ -205,8 +202,8 @@ Usage
     proporción y la última cuota absorbe el resto.
 
 10. Si Sifende responde que el número ya está en uso, el documento queda
-    en *Error*. Suba *Número Desde* del timbrado al siguiente número
-    libre del punto (panel de Sifende > Numeración) y pulse
+    en *Error*. Subí *Número Desde* del timbrado al siguiente número
+    libre del punto (panel de Sifende > Numeración) y pulsá
     **Renumerar**: el documento toma el siguiente número libre, nunca
     uno que Sifende ya informó, y se envía de nuevo con **Enviar a
     EDI**.
@@ -230,18 +227,18 @@ Usage
 14. Si Sifende responde que falta configuración (datos del
     contribuyente, timbrado o certificado sin vigencia), el documento
     queda en *Error*, no en *Rechazado*: el mensaje indica qué corregir
-    en el panel de Sifende; luego pulse **Reintentar**.
+    en el panel de Sifende; luego pulsá **Reintentar**.
 
 15. Si Sifende no responde al cancelar un documento o al enviar una
-    inutilización, vuelva a intentarlo: Odoo reutiliza la misma
-    solicitud y no se duplica el evento. *Probar conexión* avisa de los
-    puntos de expedición inactivos, y *Registrar webhook*, de un webhook
+    inutilización, volvé a intentarlo: Odoo reutiliza la misma solicitud
+    y no se duplica el evento. *Probar conexión* avisa de los puntos de
+    expedición inactivos, y *Registrar webhook*, de un webhook
     desactivado en Sifende.
 
 16. Si el contacto no tiene departamento ni una ciudad que Sifende
     reconozca, la factura y las notas se emiten sin la dirección del
     receptor, porque SIFEN la rechaza sin ciudad. La nota de remisión sí
-    la exige: elija la *Ciudad SIFEN* en el contacto.
+    la exige: elegí la *Ciudad SIFEN* en el contacto.
 
 17. En un transporte aéreo, cada vehículo necesita su *Número de vuelo*
     (6 caracteres), que aparece en la lista de vehículos al elegir la
