@@ -8,12 +8,5 @@ y devuelve el resultado y el KuDE. No hace falta cargar certificado, CSC ni la l
 Documentos admitidos: factura (FE), nota de crédito (NCE), nota de débito (NDE), nota de
 remisión (NRE) y autofactura (AFE).
 
-El envío es asincrónico. Al enviar, el documento queda en estado «Procesando» con su CDC y su
-QR. Sifende avisa por webhook cuando SIFEN responde, y un cron que consulta cada 5 minutos
-sirve de respaldo; cuando SIFEN aprueba, el documento queda «Aceptado» con el XML firmado y
-el KuDE adjuntos.
-
-El cron también vuelve a consultar cada hora los documentos aceptados dentro de su plazo de
-cancelación, por si se cancelaron en Sifende y se perdió el aviso. En cada ejecución consulta
-hasta 200 documentos por conector, empezando por los que hace más tiempo no se consultan,
-sea de la empresa que sea, para que ninguna se quede sin turno.
+El envío es asincrónico: el documento queda «Procesando» con su CDC y su QR, y pasa a
+«Aceptado», con el XML firmado y el KuDE adjuntos, cuando SIFEN lo aprueba.
