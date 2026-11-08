@@ -24,15 +24,15 @@ class SifendeWebhookEvent(models.Model):
 
     @api.model
     def register(self, connector, event_id, event_type):
-        """Devuelve False si el evento ya estaba registrado."""
+        """Devuelve el evento registrado, o uno vacío si ya estaba registrado."""
         if self.sudo().search_count(
             [("connector_id", "=", connector.id), ("event_id", "=", event_id)]
         ):
-            return False
+            return self.browse()
         # el índice único cubre la carrera entre dos entregas simultáneas
         try:
             with self.env.cr.savepoint():
-                self.sudo().create(
+                return self.sudo().create(
                     {
                         "connector_id": connector.id,
                         "event_id": event_id,
@@ -40,8 +40,7 @@ class SifendeWebhookEvent(models.Model):
                     }
                 )
         except errors.UniqueViolation:
-            return False
-        return True
+            return self.browse()
 
     @api.autovacuum
     def _gc_processed_events(self):
