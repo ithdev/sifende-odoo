@@ -667,4 +667,5 @@ class EDIConnector(models.Model):
             self._sifende_base_url(),
             self.sudo().sifende_api_key,
             self.timeout,
+            company=self.company_id,
         )

@@ -103,7 +103,15 @@ Configuration
    base y el webhook son de *Ajustes*. Los transportes de remisión, con
    sus vehículos y entregas, son de la empresa del documento: otra
    empresa no los ve ni los edita, y un transporte aún sin documento
-   solo lo edita quien lo creó.
+   solo lo edita quien lo creó. Los logs EDI (*Facturación electrónica >
+   Logs EDI*) guardan el JSON completo de cada operación, con datos
+   fiscales: cada log pertenece a una empresa, también el de las
+   operaciones sin factura, y solo lo leen los usuarios de esa empresa
+   con el rol *Contabilidad > Facturación* o de solo lectura (o
+   superior). Al actualizar, los logs anteriores toman la empresa de su
+   factura, de su CDC o, si hay un único conector de Sifende, la de ese
+   conector; los que no se pueden atribuir solo los ve un administrador
+   del sistema.
 
 Usage
 =====
