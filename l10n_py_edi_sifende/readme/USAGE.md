@@ -90,6 +90,10 @@
    de remisión sí la exige: elegí la *Ciudad SIFEN* en el contacto.
 17. En un transporte aéreo, cada vehículo necesita su *Número de vuelo* (6 caracteres), que
    aparece en la lista de vehículos al elegir la modalidad *Aéreo*.
+18. Cada línea del documento lleva un solo impuesto porcentual de IVA (10 %, 5 % o exento). Sifende
+   no puede representar un grupo de impuestos, un importe fijo ni varios impuestos en la misma
+   línea: Odoo lo avisa antes de enviar, sin llamar a Sifende, y hay que reemplazarlos por el
+   impuesto de IVA que corresponda.
 
 La vista previa del XML y del QR no está disponible: Sifende no genera documentos sin
 emitirlos.
