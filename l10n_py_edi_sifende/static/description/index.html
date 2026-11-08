@@ -523,7 +523,11 @@ siguiente. Odoo solo permite inutilizar números sin documento o de
 documentos rechazados. Si Sifende no respondió, <strong>Enviar al SIFEN</strong>
 reutiliza la misma solicitud: mientras tanto el timbrado, el rango y
 el motivo no se pueden cambiar. Para pedir otro rango, eliminá la
-inutilización y creá una nueva.</li>
+inutilización y creá una nueva. La numeración nunca reutiliza un
+número inutilizado: con una inutilización aceptada, o enviada y
+todavía sin confirmar por Sifende, el siguiente documento salta al
+número que sigue al rango. Las rechazadas y los borradores sin
+enviar no cuentan.</li>
 <li>Para cancelar un documento aceptado, pulsá <strong>Cancelar EDI</strong>: se abre
 el asistente «Cancelar documento electrónico», donde se escribe el
 motivo (se envía a SIFEN) y se confirma con <strong>Cancelar Documento</strong>.
