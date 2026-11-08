@@ -327,6 +327,43 @@ class TestRequestMapping(SifendeCommon):
         self.assertIn("banco", str(error.exception))
         self.assertFalse(self.fake.calls_to("POST", ".*"))
 
+    def test_la_autofactura_a_credito_se_frena_antes_de_enviar(self):
+        for vals in (
+            {},
+            {
+                "l10n_py_payment_type": "2",
+                "l10n_py_sifende_cheque_numero": "1234",
+                "l10n_py_sifende_cheque_banco": "Banco Continental",
+            },
+        ):
+            with self.subTest(vals=vals):
+                move = self.make_move(
+                    "af",
+                    **self.afe_vals(
+                        invoice_payment_term_id=self.term([(30, 100)]).id, **vals
+                    ),
+                )
+                with self.assertRaisesRegex(UserError, "al contado"):
+                    move.action_send_edi()
+                self.assertFalse(self.fake.calls_to("POST", ".*"))
+
+    def test_la_autofactura_con_pago_inmediato_se_emite_al_contado(self):
+        move = self.make_move(
+            "af",
+            **self.afe_vals(invoice_payment_term_id=self.term([(0, 100)]).id),
+        )
+        payment = self.sent_payload(move)["condicionPago"]
+        self.assertEqual(payment["tipo"], "CONTADO")
+        self.assertEqual(payment["tipoPago"], "EFECTIVO")
+
+    def test_el_builder_rechaza_una_autofactura_sin_entregas(self):
+        move = self.make_move("af", **self.afe_vals())
+        data = move._prepare_edi_document_data()
+        data["condicion"] = {"tipo": 2, "credito": {"tipo": 1}}
+        builder = SifendeRequestBuilder(self.env, self.connector._sifende_enum_name)
+        with self.assertRaisesRegex(UserError, "al contado"):
+            builder.build(data)
+
     def test_el_descuento_con_fraccion_por_unidad_en_guaranies_no_se_pierde(self):
         move = self.make_move(
             "fe",

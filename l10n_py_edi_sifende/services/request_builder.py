@@ -525,10 +525,19 @@ class SifendeRequestBuilder:
         decimals = extra.get("decimales", 0 if currency == PYG else 2)
         doc_type = int(auto["tipoDocumentoVendedor"])
         nature = 1 if doc_type in (1, 4) else 2
-        payment = (data["condicion"].get("entregas") or [{}])[0]
-        payment_type = int(payment.get("tipo") or 1)
+        condition = data["condicion"]
+        entregas = condition.get("entregas") or []
+        if int(condition["tipo"]) != 1 or len(entregas) != 1:
+            raise UserError(
+                self.env._(
+                    "Autofactura: sólo se admite el pago al contado con una única "
+                    "forma de pago."
+                )
+            )
+        payment = entregas[0]
+        payment_type = int(payment["tipo"])
         amount = self._distribute(
-            [payment.get("monto") or extra.get("montoTotal") or 0],
+            [payment["monto"]],
             self._fiscal_total(extra, currency, decimals),
             decimals,
         )[0]

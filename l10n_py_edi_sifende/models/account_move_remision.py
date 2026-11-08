@@ -468,6 +468,13 @@ class AccountMove(models.Model):
         def add(text):
             errors.append(f"{label}: {text}")
 
+        if not self._l10n_py_sifende_is_cash():
+            add(
+                self.env._(
+                    "sólo se admite el pago al contado: quite el plazo de pago "
+                    "o las cuotas."
+                )
+            )
         constancia_type = self.l10n_py_afe_constancia_type
         if constancia_type and constancia_type != "1":
             add(
