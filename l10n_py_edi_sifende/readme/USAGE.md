@@ -71,7 +71,8 @@
 11. En una autofactura, el tipo y el número de la constancia de la sección *Autofactura* se
    agregan solos como documento asociado al confirmar o enviar: no hace falta cargarlos otra vez
    en *Documentos asociados*. Sifende recibe solo el tipo; el número y el código de control
-   quedan en Odoo.
+   quedan en Odoo. La autofactura solo admite pago al contado: con un plazo de pago o en
+   cuotas, el envío se frena con un error.
 12. Todas las líneas del documento necesitan producto: Sifende toma de él el código y el NCM. En
    una nota de remisión, el campo *Datos de transporte* ofrece solo los transportes sin
    documento o del propio documento.
