@@ -206,11 +206,64 @@ class TestWebhookController(SifendeCommon, HttpCase):
         self.fake.add(
             "GET", rf"/documento-electronico/status/{CDC}$", requests.Timeout()
         )
-        self.assertEqual(self.post("documento.rechazado").status_code, 200)
+        self.assertEqual(self.post("documento.rechazado").status_code, 503)
         self.assertEqual(move.l10n_py_edi_status, "processing")
+        self.assertFalse(self.events())
         self.route_status("RECHAZADO")
         self.env["account.move"]._cron_sifende_check_status()
         self.assertEqual(move.l10n_py_edi_status, "rejected")
+
+    def test_falla_de_consulta_responde_recuperable_y_no_consume_el_evento(self):
+        move = self.processing_move()
+        self.post("documento.aprobado")
+        self.assertEqual(move.l10n_py_edi_status, "accepted")
+        self.fake.add(
+            "GET",
+            rf"/documento-electronico/status/{CDC}$",
+            FakeResponse(503, {"detail": "no disponible"}),
+        )
+        response = self.post(
+            "documento.cancelado", event_id="evt-cancel", estado="CANCELADO"
+        )
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(move.l10n_py_edi_status, "accepted")
+        self.assertFalse(self.events().filtered(lambda e: e.event_id == "evt-cancel"))
+        # el reenvío del mismo evento se procesa cuando la consulta ya responde
+        self.route_status("CANCELADO")
+        response = self.post(
+            "documento.cancelado", event_id="evt-cancel", estado="CANCELADO"
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(move.l10n_py_edi_status, "cancelled")
+        self.assertTrue(self.events().filtered(lambda e: e.event_id == "evt-cancel"))
+
+    def test_falla_de_consulta_deja_la_traza_en_el_log_y_no_el_evento(self):
+        move = self.processing_move()
+        status_logs = self.env["l10n_py.edi.log"].search(
+            [("provider", "=", "sifende"), ("operation_type", "=", "status")]
+        )
+        self.fake.add(
+            "GET", rf"/documento-electronico/status/{CDC}$", requests.Timeout()
+        )
+        response = self.post("documento.rechazado", event_id="evt-fail")
+        self.assertEqual(response.status_code, 503)
+        self.assertFalse(self.events())
+        self.assertEqual(move.l10n_py_edi_status, "processing")
+        new_logs = (
+            self.env["l10n_py.edi.log"].search(
+                [("provider", "=", "sifende"), ("operation_type", "=", "status")]
+            )
+            - status_logs
+        )
+        self.assertEqual(len(new_logs), 1)
+        self.assertFalse(new_logs.success)
+        self.assertEqual(new_logs.cdc, CDC)
+        # la reentrega se procesa y consume el evento
+        self.route_status("RECHAZADO")
+        response = self.post("documento.rechazado", event_id="evt-fail")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(move.l10n_py_edi_status, "rejected")
+        self.assertTrue(self.events().filtered(lambda e: e.event_id == "evt-fail"))
 
     def test_kude_en_preparacion_queda_pendiente_para_el_cron(self):
         move = self.processing_move()
