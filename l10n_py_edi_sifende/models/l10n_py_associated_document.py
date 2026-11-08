@@ -18,7 +18,13 @@ class AssociatedDocument(models.Model):
         return super().create(vals_list)
 
     def write(self, vals):
-        self._l10n_py_sifende_check_frozen(self.move_id)
+        new_owner = self.env["account.move"].browse(vals.get("move_id"))
+        moves = self.move_id | new_owner
+        self._l10n_py_sifende_check_frozen(moves)
+        # moverlo a otro documento es escribir ese documento
+        for move in new_owner:
+            if move._l10n_py_sifende_connector():
+                move.check_access("write")
         return super().write(vals)
 
     def unlink(self):
