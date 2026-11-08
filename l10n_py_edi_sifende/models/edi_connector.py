@@ -272,9 +272,9 @@ class EDIConnector(models.Model):
     def _sifende_send_document(self, invoice_data):
         self.ensure_one()
         extra = invoice_data.get("sifende") or {}
-        payload = SifendeRequestBuilder(self.env, self._sifende_enum_name).build(
-            invoice_data
-        )
+        payload = extra.get("request") or SifendeRequestBuilder(
+            self.env, self._sifende_enum_name
+        ).build(invoice_data)
         key = extra.get("idempotencyKey")
         document = (
             self.env["account.move"].browse(extra["moveId"])
@@ -296,6 +296,7 @@ class EDIConnector(models.Model):
                 "success": False,
                 "edi_status": "error",
                 "transient": True,
+                "request": payload,
                 "error": self.env._(
                     "No se pudo contactar a SIFENDE (%(error)s). Al reintentar se "
                     "usará la misma clave de idempotencia: no se duplica el documento.",
@@ -314,7 +315,11 @@ class EDIConnector(models.Model):
                     "estado": body.get("estado") or "PENDIENTE",
                 },
             }
-        return self._sifende_send_failure(response)
+        failure = self._sifende_send_failure(response)
+        if failure.get("transient"):
+            # resultado incierto: el reintento reenvía esta misma solicitud
+            failure["request"] = payload
+        return failure
 
     def _sifende_send_failure(self, response):
         slug = response.slug
