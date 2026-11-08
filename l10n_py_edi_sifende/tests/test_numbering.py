@@ -146,3 +146,75 @@ class TestNumbering(SifendeCommon):
         with self.assertRaisesRegex(UserError, "agotada"):
             move.action_l10n_py_sifende_renumber()
         self.assertEqual(move.l10n_py_invoice_number, 2)
+
+    # === Inutilizaciones aceptadas ===
+
+    def voided(self, number_from, number_to, state="accepted"):
+        inutilization = self.env["l10n_py.number.inutilization"].create(
+            {
+                "authorization_id": self.auths["fe"].id,
+                "number_from": number_from,
+                "number_to": number_to,
+                "motive": "Números saltados por error de sistema",
+            }
+        )
+        inutilization.state = state
+        return inutilization
+
+    def test_la_numeracion_salta_un_rango_inutilizado_aceptado(self):
+        self.voided(1, 10)
+        self.assertEqual(self.auths["fe"].next_number, 11)
+        self.assertEqual(self.make_move("fe").l10n_py_invoice_number, 11)
+        self.assertEqual(self.make_move("fe").l10n_py_invoice_number, 12)
+
+    def test_la_numeracion_salta_un_rango_inutilizado_por_delante_de_la_ultima(self):
+        self.make_move("fe")
+        self.make_move("fe")
+        self.voided(3, 5)
+        self.assertEqual(self.make_move("fe").l10n_py_invoice_number, 6)
+
+    def test_la_numeracion_encadena_rangos_inutilizados_contiguos_y_deja_huecos(self):
+        self.voided(1, 3)
+        self.voided(4, 6)
+        self.voided(8, 9)
+        self.assertEqual(self.make_move("fe").l10n_py_invoice_number, 7)
+        self.assertEqual(self.make_move("fe").l10n_py_invoice_number, 10)
+
+    def test_una_inutilizacion_no_aceptada_no_afecta_la_numeracion(self):
+        self.voided(1, 10, state="draft")
+        self.voided(1, 10, state="rejected")
+        self.assertEqual(self.make_move("fe").l10n_py_invoice_number, 1)
+
+    def test_la_numeracion_salta_una_inutilizacion_enviada_sin_confirmar(self):
+        self.voided(1, 10, state="sent")
+        self.assertEqual(self.auths["fe"].next_number, 11)
+        self.assertEqual(self.make_move("fe").l10n_py_invoice_number, 11)
+
+    def test_la_numeracion_salta_una_inutilizacion_con_envio_pendiente(self):
+        # tras un fallo transitorio el estado vuelve a borrador pero queda la clave
+        inutilization = self.voided(1, 10, state="draft")
+        inutilization.l10n_py_sifende_event_key = "pending-key"
+        self.assertEqual(self.make_move("fe").l10n_py_invoice_number, 11)
+
+    def test_una_inutilizacion_rechazada_con_clave_no_afecta_la_numeracion(self):
+        inutilization = self.voided(1, 10, state="rejected")
+        inutilization.l10n_py_sifende_event_key = "stale-key"
+        self.assertEqual(self.make_move("fe").l10n_py_invoice_number, 1)
+
+    def test_una_inutilizacion_de_otro_timbrado_no_afecta_la_numeracion(self):
+        self.env["l10n_py.number.inutilization"].create(
+            {
+                "authorization_id": self.auths["nc"].id,
+                "number_from": 1,
+                "number_to": 10,
+                "motive": "Números saltados por error de sistema",
+                "state": "accepted",
+            }
+        )
+        self.assertEqual(self.make_move("fe").l10n_py_invoice_number, 1)
+
+    def test_la_faja_se_agota_si_el_rango_inutilizado_llega_al_final(self):
+        self.auths["fe"].invoice_number_to = 10
+        self.voided(1, 10)
+        with self.assertRaisesRegex(UserError, "agotada"):
+            self.make_move("fe")

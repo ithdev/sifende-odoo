@@ -174,7 +174,11 @@ Usage
     documentos rechazados. Si Sifende no respondió, **Enviar al SIFEN**
     reutiliza la misma solicitud: mientras tanto el timbrado, el rango y
     el motivo no se pueden cambiar. Para pedir otro rango, eliminá la
-    inutilización y creá una nueva.
+    inutilización y creá una nueva. La numeración nunca reutiliza un
+    número inutilizado: con una inutilización aceptada, o enviada y
+    todavía sin confirmar por Sifende, el siguiente documento salta al
+    número que sigue al rango. Las rechazadas y los borradores sin
+    enviar no cuentan.
 
 7.  Para cancelar un documento aceptado, pulsá **Cancelar EDI**: se abre
     el asistente «Cancelar documento electrónico», donde se escribe el
