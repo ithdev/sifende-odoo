@@ -104,11 +104,22 @@ class SifendeWebhookController(http.Controller):
             )
             return 200
         event_id = request.httprequest.headers["X-Sifende-Event-Id"]
-        registered = request.env["l10n_py.sifende.webhook.event"].register(
+        event = request.env["l10n_py.sifende.webhook.event"].register(
             connector, event_id, event_type
         )
-        if registered:
-            move._l10n_py_sifende_apply_webhook(connector, event_type, data)
+        if event and not move._l10n_py_sifende_apply_webhook(
+            connector, event_type, data
+        ):
+            # sin la consulta de estado el aviso no se pudo aplicar: solo se libera el
+            # registro del evento para que la reentrega se procese. No hay rollback,
+            # así que queda la traza de la consulta fallida en el log EDI.
+            event.unlink()
+            _logger.warning(
+                "Webhook de Sifende %s sin consumir: falló la consulta de estado de %s",
+                event_id,
+                data.get("cdc"),
+            )
+            return 503
         return 200
 
     @staticmethod

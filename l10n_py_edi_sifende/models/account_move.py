@@ -1068,12 +1068,24 @@ class AccountMove(models.Model):
             self._l10n_py_sifende_fetch_files(connector, kude_wait)
 
     def _l10n_py_sifende_refresh_state(self, connector, announced=None, message=None):
+        """Aplica el estado vigente en Sifende.
+
+        Devuelve False si la consulta falló: una falla no es un estado fiscal y no
+        se aplica nada. Un estado no aprobado (rechazado, cancelado...) sí llega
+        con su `result`, aunque la consulta lo marque como no exitoso.
+        """
         self.ensure_one()
         result = connector._sifende_check_status(self.l10n_py_cdc).get("result") or {}
         state = result.get("estado")
+        if not state:
+            _logger.info(
+                "Sin estado vigente en Sifende para el documento %s", self.l10n_py_cdc
+            )
+            return False
         if not (announced and message and self._sifende_same_outcome(announced, state)):
             message = result.get("mensajeRechazo")
         self._l10n_py_sifende_apply_state(state, message)
+        return True
 
     @staticmethod
     def _sifende_same_outcome(announced, state):
@@ -1134,6 +1146,7 @@ class AccountMove(models.Model):
             self.write({"l10n_py_edi_status": "cancelled"})
 
     def _l10n_py_sifende_apply_webhook(self, connector, event_type, data):
+        """Devuelve False si no se pudo consultar el estado vigente."""
         self.ensure_one()
         announced = WEBHOOK_STATES[event_type]
         status = self.l10n_py_edi_status
@@ -1149,9 +1162,13 @@ class AccountMove(models.Model):
                 for result in results or []
                 if isinstance(result, dict) and result.get("mensaje")
             )
-            self._l10n_py_sifende_refresh_state(connector, announced, message or None)
+            if not self._l10n_py_sifende_refresh_state(
+                connector, announced, message or None
+            ):
+                return False
         if self.l10n_py_edi_status == "accepted":
             self._l10n_py_sifende_fetch_files(connector, kude_wait=0)
+        return True
 
     def _l10n_py_sifende_fetch_files(self, connector, kude_wait=KUDE_MAX_WAIT):
         self.ensure_one()
