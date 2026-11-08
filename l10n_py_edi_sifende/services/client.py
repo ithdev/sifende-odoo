@@ -101,8 +101,9 @@ def clear_enum_cache():
 
 
 class SifendeClient:
-    def __init__(self, env, base_url, api_key, timeout):
+    def __init__(self, env, base_url, api_key, timeout, company=None):
         self.env = env
+        self.company = company
         self.base_url = base_url
         self.api_key = api_key
         self.timeout = timeout or 30
@@ -285,9 +286,11 @@ class SifendeClient:
                 if transport_error is not None
                 else response.failure_message(self.env)
             )
+        company = self.company or (document.company_id if document else None)
         self.env["l10n_py.edi.log"].log_operation(
             operation_type=operation,
             provider="sifende",
+            company_id=company.id if company else False,
             document=document or None,
             request_data=json_body,
             response_data=response_data,

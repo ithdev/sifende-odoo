@@ -1,3 +1,5 @@
+import importlib.util
+from pathlib import Path
 from unittest.mock import patch
 
 from odoo import fields
@@ -409,3 +411,145 @@ class TestSecurity(SifendeCommon):
             with self.assertRaisesRegex(UserError, "HTTPS"):
                 self.connector.test_connection()
         self.assertFalse(self.fake.calls)
+
+    # === Logs EDI ===
+
+    def make_logs(self):
+        # `validate` no lleva factura: la empresa sale del conector
+        self.fake.add("GET", r"^/contribuyente$", TAXPAYER)
+        logs = self.env["l10n_py.edi.log"]
+        created = []
+        for connector in (self.connector, self.other_connector):
+            known = logs.search([])
+            connector.test_connection()
+            created.append(logs.search([]) - known)
+        log_a, log_b = created
+        self.assertEqual(len(log_a), 1)
+        self.assertEqual(len(log_b), 1)
+        return log_a, log_b
+
+    def test_el_log_sin_factura_registra_la_empresa_del_conector(self):
+        log_a, log_b = self.make_logs()
+        self.assertEqual(log_a.company_id, self.company)
+        self.assertEqual(log_b.company_id, self.other_company)
+        self.assertEqual(log_b.operation_type, "validate")
+        self.assertFalse(log_b.document_id)
+
+    def test_el_log_con_factura_registra_la_empresa_de_la_factura(self):
+        move = self.make_move("fe")
+        log = self.env["l10n_py.edi.log"].log_operation(
+            operation_type="send", provider="sifende", document=move
+        )
+        self.assertEqual(log.company_id, move.company_id)
+
+    def test_los_logs_de_otra_empresa_no_se_ven_ni_se_leen(self):
+        log_a, log_b = self.make_logs()
+        logs = self.env["l10n_py.edi.log"]
+        for login, group in (
+            ("interno_logs", None),
+            ("facturador_logs", "account.group_account_invoice"),
+            ("auditor_logs", "account.group_account_readonly"),
+            ("gerente_logs", "account.group_account_manager"),
+        ):
+            user = self.make_user(login, *([group] if group else []))
+            visible = logs.with_user(user).search([])
+            self.assertNotIn(log_b, visible, login)
+            with self.assertRaises(AccessError, msg=login):
+                log_b.with_user(user).read(["request_data"])
+            if group:
+                self.assertIn(log_a, visible, login)
+                log_a.with_user(user).read(["request_data"])
+
+    def test_un_contable_de_la_otra_empresa_si_lee_sus_logs(self):
+        log_a, log_b = self.make_logs()
+        user = self.make_user(
+            "contable_b", "account.group_account_manager", companies=self.other_company
+        )
+        logs = (
+            self.env["l10n_py.edi.log"]
+            .with_user(user)
+            .with_context(allowed_company_ids=self.other_company.ids)
+        )
+        self.assertEqual(logs.search([("provider", "=", "sifende")]), log_b)
+        self.assertTrue(logs.browse(log_b.ids).read(["request_data", "endpoint"]))
+        with self.assertRaises(AccessError):
+            logs.browse(log_a.ids).read(["request_data"])
+
+    def test_un_usuario_interno_no_lee_ningun_log(self):
+        log_a, log_b = self.make_logs()
+        user = self.make_user("interno_sin_logs")
+        logs = self.env["l10n_py.edi.log"].with_user(user)
+        self.assertFalse(logs.search([]))
+        with self.assertRaises(AccessError):
+            log_a.with_user(user).read(["request_data"])
+
+    def test_los_logs_se_limitan_a_la_empresa_activa_del_multiempresa(self):
+        log_a, log_b = self.make_logs()
+        user = self.make_user(
+            "multiempresa_logs",
+            "account.group_account_invoice",
+            companies=self.company | self.other_company,
+        )
+        logs = self.env["l10n_py.edi.log"].with_user(user)
+        only_a = logs.with_context(allowed_company_ids=self.company.ids).search([])
+        self.assertIn(log_a, only_a)
+        self.assertNotIn(log_b, only_a)
+        both = logs.with_context(
+            allowed_company_ids=(self.company | self.other_company).ids
+        ).search([])
+        self.assertIn(log_b, both)
+
+    def test_los_logs_sin_empresa_solo_los_ve_el_administrador(self):
+        log_a, log_b = self.make_logs()
+        legacy = log_a.copy()
+        legacy.company_id = False
+        manager = self.make_user("gerente_legacy", "account.group_account_manager")
+        admin = self.make_user(
+            "admin_legacy", "base.group_system", "account.group_account_manager"
+        )
+        self.assertNotIn(
+            legacy, self.env["l10n_py.edi.log"].with_user(manager).search([])
+        )
+        self.assertIn(legacy, self.env["l10n_py.edi.log"].with_user(admin).search([]))
+
+    def run_log_migration(self):
+        path = Path(__file__).parent.parent / "migrations/19.0.1.1.0/post-migration.py"
+        spec = importlib.util.spec_from_file_location("log_migration", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        self.env.flush_all()
+        module.migrate(self.env.cr, "19.0.1.0.0")
+        self.env.invalidate_all()
+
+    def test_la_migracion_asigna_empresa_a_los_logs_existentes(self):
+        logs = self.env["l10n_py.edi.log"]
+        move = self.make_move("fe")
+        by_document = logs.log_operation("send", "sifende", document=move)
+        by_cdc = logs.log_operation("status", "sifende", cdc=CDC)
+        move.l10n_py_cdc = CDC
+        other = logs.log_operation("event", "sifende")
+        local = logs.log_operation("send", "local")
+        logs = by_document | by_cdc | other | local
+        self.env.cr.execute(
+            "UPDATE l10n_py_edi_log SET company_id = NULL WHERE id IN %s",
+            (tuple(logs.ids),),
+        )
+        # con dos empresas con conector Sifende no se adivina la de un log suelto
+        self.run_log_migration()
+        self.assertEqual(by_document.company_id, move.company_id)
+        self.assertEqual(by_cdc.company_id, move.company_id)
+        self.assertFalse(other.company_id)
+        self.assertFalse(local.company_id)
+
+    def test_la_migracion_usa_el_unico_conector_sifende_para_logs_sueltos(self):
+        logs = self.env["l10n_py.edi.log"]
+        self.other_connector.unlink()
+        other = logs.log_operation("event", "sifende")
+        local = logs.log_operation("send", "local")
+        self.env.cr.execute(
+            "UPDATE l10n_py_edi_log SET company_id = NULL WHERE id IN %s",
+            (tuple((other | local).ids),),
+        )
+        self.run_log_migration()
+        self.assertEqual(other.company_id, self.company)
+        self.assertFalse(local.company_id)
