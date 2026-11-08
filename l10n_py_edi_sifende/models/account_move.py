@@ -1,4 +1,5 @@
 import base64
+import json
 import logging
 import time
 from datetime import datetime, timedelta
@@ -87,6 +88,13 @@ class AccountMove(models.Model):
         readonly=True,
     )
     l10n_py_sifende_reintento_misma_clave = fields.Boolean(copy=False)
+    # solicitud (JSON, con el orden de las claves) de un envío de resultado incierto:
+    # el reintento con la misma clave de idempotencia la reenvía sin reconstruirla.
+    # Tiene datos fiscales completos: solo la lee el administrador, y el código la
+    # lee y la escribe con sudo() para que facturación pueda enviar y reintentar.
+    l10n_py_sifende_request = fields.Text(
+        copy=False, readonly=True, groups="base.group_system"
+    )
     l10n_py_sifende_frozen = fields.Boolean(compute="_compute_l10n_py_sifende_frozen")
     l10n_py_sifende_envio_fallido = fields.Boolean(copy=False)
     l10n_py_sifende_numero_ocupado = fields.Boolean(copy=False, readonly=True)
@@ -766,30 +774,77 @@ class AccountMove(models.Model):
         connector._sifende_check_environment()
         if self._l10n_py_sifende_is_failed():
             raise UserError(self._l10n_py_sifende_failed_steps())
-        self._l10n_py_sifende_link_origin_document()
-        self._validate_edi_data()
-        document_data = self._prepare_edi_document_data()
+        # antes de tocar el estado: si ya hay un intento incierto abierto, un fallo
+        # previo al POST (acceso, ambiente, API key, URL) no lo cierra
+        open_attempt = self._l10n_py_sifende_pending_send()
+        stored = self._l10n_py_sifende_stored_request()
+        if stored:
+            # la misma clave exige la misma solicitud: contacto, producto y unidad
+            # de medida pueden haber cambiado desde el intento original
+            document_data = {
+                "sifende": {
+                    "moveId": self.id,
+                    "idempotencyKey": self._l10n_py_sifende_idempotency_key(),
+                    "request": stored,
+                }
+            }
+        else:
+            self._l10n_py_sifende_link_origin_document()
+            self._validate_edi_data()
+            document_data = self._prepare_edi_document_data()
         self.l10n_py_edi_status = "sent"
         try:
             response = connector.send_document(document_data)
         except UserError as e:
-            response = {"success": False, "edi_status": "error", "error": str(e)}
+            # nada llegó a Sifende: el intento incierto, si lo había, sigue abierto
+            response = {
+                "success": False,
+                "edi_status": "error",
+                "error": str(e),
+                "transient": open_attempt,
+                "request": stored,
+            }
         if response.get("success"):
-            self.l10n_py_sifende_reintento_misma_clave = False
+            self._l10n_py_sifende_set_attempt(False)
             self._process_edi_response(response)
             return
+        # mientras el resultado sea incierto se conserva la solicitud original
+        self._l10n_py_sifende_set_attempt(
+            bool(response.get("transient")), response.get("request")
+        )
         self.write(
             {
                 "l10n_py_edi_status": response.get("edi_status") or "error",
                 "l10n_py_edi_message": response.get("error"),
-                "l10n_py_sifende_reintento_misma_clave": bool(
-                    response.get("transient")
-                ),
                 "l10n_py_sifende_envio_fallido": False,
             }
         )
         if response.get("number_conflict"):
             self._l10n_py_sifende_register_number_conflict(response.get("existing_cdc"))
+
+    def _l10n_py_sifende_stored_request(self):
+        self.ensure_one()
+        request = self.sudo().l10n_py_sifende_request
+        if request and self._l10n_py_sifende_pending_send():
+            return json.loads(request)
+        return {}
+
+    def _l10n_py_sifende_set_attempt(self, pending, request=None):
+        """Abrir o cerrar el intento de resultado incierto.
+
+        Único lugar que escribe el reintento con la misma clave y la solicitud
+        guardada, para que valga siempre: sin reintento pendiente no hay solicitud.
+        """
+        self.ensure_one()
+        values = {
+            "l10n_py_sifende_reintento_misma_clave": bool(pending),
+            "l10n_py_sifende_request": (
+                json.dumps(request) if pending and request else False
+            ),
+        }
+        record = self.sudo()
+        if any(record[name] != value for name, value in values.items()):
+            record.write(values)
 
     def _l10n_py_sifende_is_same_document(self, cdc):
         self.ensure_one()
@@ -844,13 +899,13 @@ class AccountMove(models.Model):
             )
         old_number = self.l10n_py_invoice_number
         number = self._l10n_py_sifende_free_number()
+        self._l10n_py_sifende_set_attempt(False)
         self.write(
             {
                 "l10n_py_invoice_number": number,
                 "l10n_py_sifende_numero_ocupado": False,
                 "l10n_py_sifende_cdc_existente": False,
                 "l10n_py_sifende_intento": self.l10n_py_sifende_intento + 1,
-                "l10n_py_sifende_reintento_misma_clave": False,
                 "l10n_py_edi_status": "to_send",
                 "l10n_py_edi_message": self.env._(
                     "Renumerado: el número %(old)s ya estaba en uso en Sifende y "
@@ -1099,6 +1154,7 @@ class AccountMove(models.Model):
         failed = self._l10n_py_sifende_is_failed()
         in_flight = status == "processing" or failed
         if state in APPROVED_STATES and in_flight:
+            self._l10n_py_sifende_set_attempt(False)
             self.write(
                 {
                     "l10n_py_edi_status": "accepted",
@@ -1108,6 +1164,7 @@ class AccountMove(models.Model):
                 }
             )
         elif state == "RECHAZADO" and in_flight:
+            self._l10n_py_sifende_set_attempt(False)
             self.write(
                 {
                     "l10n_py_edi_status": "rejected",
@@ -1117,16 +1174,15 @@ class AccountMove(models.Model):
                             self._l10n_py_sifende_rejection_steps(),
                         )
                     ),
-                    "l10n_py_sifende_reintento_misma_clave": False,
                     "l10n_py_sifende_envio_fallido": False,
                 }
             )
         elif state == "ERROR" and status == "processing":
+            self._l10n_py_sifende_set_attempt(False)
             self.write(
                 {
                     "l10n_py_edi_status": "error",
                     "l10n_py_sifende_envio_fallido": True,
-                    "l10n_py_sifende_reintento_misma_clave": False,
                     "l10n_py_edi_message": "\n\n".join(
                         filter(None, (message, self._l10n_py_sifende_failed_steps()))
                     ),
