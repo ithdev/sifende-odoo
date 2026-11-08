@@ -33,11 +33,36 @@ class AccountAuthorization(models.Model):
             ._read_group(domain, aggregates=["l10n_py_invoice_number:max"])[0][0]
             or 0
         )
-        return max(
+        number = max(
             last + 1,
             self.invoice_number_from,
             self.l10n_py_sifende_ultimo_numero_en_uso + 1,
         )
+        # SIFEN no admite documentos con un número inutilizado: se salta cada
+        # rango aceptado que contenga al candidato, también los encadenados.
+        # También cuentan los enviados sin confirmar (estado enviado, o
+        # borrador con la clave de envío pendiente), porque pueden haberse
+        # aceptado en Sifende; los rechazados no
+        voided = (
+            self.env["l10n_py.number.inutilization"]
+            .sudo()
+            .search(
+                [
+                    ("authorization_id", "=", self.id),
+                    "|",
+                    ("state", "in", ("accepted", "sent")),
+                    "&",
+                    ("state", "=", "draft"),
+                    ("l10n_py_sifende_event_key", "!=", False),
+                    ("number_to", ">=", number),
+                ],
+                order="number_from, number_to",
+            )
+        )
+        for inutilization in voided:
+            if inutilization.number_from <= number <= inutilization.number_to:
+                number = inutilization.number_to + 1
+        return number
 
     @api.depends("invoice_number_from", "l10n_py_sifende_ultimo_numero_en_uso")
     def _compute_next_number(self):
