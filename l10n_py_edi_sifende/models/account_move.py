@@ -612,6 +612,7 @@ class AccountMove(models.Model):
     def _validate_edi_data(self):
         if self._l10n_py_sifende_connector():
             self._l10n_py_sifende_check_products()
+            self._l10n_py_sifende_check_taxes()
         return super()._validate_edi_data()
 
     def _l10n_py_sifende_check_products(self):
@@ -635,6 +636,33 @@ class AccountMove(models.Model):
                         else self.env._("n.º %(position)s", position=position),
                     )
                     for position, line in missing
+                )
+            )
+
+    def _l10n_py_sifende_check_taxes(self):
+        # SIFEN declara un solo IVA por ítem y el traductor lee solo los
+        # impuestos directos de la línea: un grupo (sus hijos no se recorren),
+        # un importe fijo o varios impuestos saldrían con otra tasa o sin IVA
+        self.ensure_one()
+        invalid = []
+        for line in self.invoice_line_ids.filtered(
+            lambda line: line.display_type == "product"
+        ):
+            taxes = line.tax_ids
+            if len(taxes) > 1 or any(tax.amount_type != "percent" for tax in taxes):
+                invalid.append((line, taxes))
+        if invalid:
+            raise UserError(
+                "\n".join(
+                    self.env._(
+                        "La línea %(line)s usa los impuestos %(taxes)s, que SIFEN no "
+                        "puede representar: cada ítem lleva un solo impuesto "
+                        "porcentual de IVA (sin grupos de impuestos ni importes "
+                        "fijos). Reemplácelos por un único impuesto de IVA.",
+                        line=f'"{line.name or line.product_id.display_name}"',
+                        taxes=", ".join(f'"{name}"' for name in taxes.mapped("name")),
+                    )
+                    for line, taxes in invalid
                 )
             )
 
