@@ -1,7 +1,9 @@
+from datetime import timedelta
+
 from odoo.exceptions import UserError
 from odoo.tests import tagged
 
-from .common import CDC, FIXED_DATE, SifendeCommon
+from .common import CDC, FIXED_DATE, STAMP, SifendeCommon
 
 ORIGIN_CDC = "01800123451001001000000122026042710000000006"
 
@@ -138,3 +140,65 @@ class TestNotesAndStamps(SifendeCommon):
         move = self.draft_without_stamp("fe")
         move.l10n_latam_document_type_id = self.doc_types["nd"]
         self.assertEqual(move.l10n_py_authorization_id, self.auths["nd"])
+
+    # === Identidad fiscal del documento ===
+
+    def manual_authorization(self, kind="fe", **vals):
+        return self.auths[kind].copy(
+            {
+                "name": "22222222",
+                "establishment": "002",
+                "expedition_point": "003",
+                **vals,
+            }
+        )
+
+    def assert_identity(self, payload, stamp, establishment, point):
+        self.assertEqual(
+            (
+                payload["numeroTimbrado"],
+                payload["numeroEstablecimiento"],
+                payload["puntoExpedicion"],
+            ),
+            (int(stamp), establishment, point),
+        )
+
+    def test_la_cabecera_sale_con_el_timbrado_asignado_al_documento(self):
+        other = self.manual_authorization()
+        move = self.make_move("fe", l10n_py_authorization_id=other.id)
+        self.assertEqual(move.l10n_py_full_invoice_number, "002-003-0000001")
+        self.assertEqual(self.auths["fe"].name, STAMP)
+        self.assert_identity(self.sent_payload(move), "22222222", 2, 3)
+
+    def test_renovar_el_timbrado_del_diario_no_cambia_un_documento_publicado(self):
+        other = self.manual_authorization()
+        move = self.make_move("fe", l10n_py_authorization_id=other.id)
+        renewed = self.auths["fe"].copy({"name": "33333333"})
+        self.journals["fe"].l10n_py_authorization_id = renewed
+        self.assert_identity(self.sent_payload(move), "22222222", 2, 3)
+
+    def test_renovar_el_diario_no_cambia_un_documento_con_el_timbrado_del_diario(self):
+        move = self.make_move("fe")
+        renewed = self.auths["fe"].copy({"name": "33333333"})
+        self.journals["fe"].l10n_py_authorization_id = renewed
+        self.assert_identity(self.sent_payload(move), STAMP, 1, 1)
+
+    def test_un_timbrado_vencido_del_documento_no_se_envia(self):
+        other = self.manual_authorization()
+        move = self.make_move("fe", l10n_py_authorization_id=other.id)
+        other.write(
+            {
+                "date_from": FIXED_DATE - timedelta(days=400),
+                "date_to": FIXED_DATE - timedelta(days=60),
+            }
+        )
+        with self.assertRaisesRegex(UserError, "timbrado .*vencido"):
+            move.action_send_edi()
+        self.assertFalse(self.fake.calls_to("POST", ".*"))
+
+    def test_el_timbrado_del_documento_debe_ser_del_tipo_de_documento(self):
+        move = self.make_move("fe")
+        move.l10n_py_authorization_id = self.auths["nc"]
+        with self.assertRaisesRegex(UserError, "tipo de documento"):
+            move.action_send_edi()
+        self.assertFalse(self.fake.calls_to("POST", ".*"))

@@ -95,6 +95,11 @@
    no puede representar un grupo de impuestos, un importe fijo ni varios impuestos en la misma
    línea: Odoo lo avisa antes de enviar, sin llamar a Sifende, y hay que reemplazarlos por el
    impuesto de IVA que corresponda.
+19. El timbrado, el establecimiento y el punto de expedición que se envían a SIFEN son los del
+   *Timbrado* del documento (el mismo que da su número), no los del diario: si elegís a mano otro
+   timbrado, o si renovás el del diario después de publicar, el documento sigue saliendo con el
+   que se le asignó. Antes de enviar, Odoo exige que ese timbrado sea de la empresa y del tipo de
+   documento y que esté vigente.
 
 La vista previa del XML y del QR no está disponible: Sifende no genera documentos sin
 emitirlos.
