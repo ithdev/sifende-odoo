@@ -245,6 +245,44 @@ class TestSecurity(SifendeCommon):
         inutilization.with_user(manager).action_send()
         self.assertEqual(inutilization.state, "accepted")
 
+    # === Documentos asociados ===
+
+    def test_un_documento_asociado_no_se_mueve_a_un_documento_que_no_se_puede_escribir(
+        self,
+    ):
+        source = self.make_move("fe")
+        target = self.make_move("fe")
+        associated = self.associate(source)
+        self.env["ir.rule"].create(
+            {
+                "name": "Documento de solo lectura (prueba)",
+                "model_id": self.env.ref("account.model_account_move").id,
+                "domain_force": f"[('id', '!=', {target.id})]",
+                "perm_read": False,
+                "perm_create": False,
+                "perm_unlink": False,
+            }
+        )
+        manager = self.make_user("gerente_asociado", "account.group_account_manager")
+        associated_manager = associated.with_user(manager)
+        target.with_user(manager).check_access("read")
+        with self.assertRaises(AccessError):
+            target.with_user(manager).check_access("write")
+        with self.assertRaises(AccessError):
+            associated_manager.move_id = target
+        associated.invalidate_recordset()
+        self.assertEqual(associated.move_id, source)
+
+    def test_un_documento_asociado_se_mueve_a_un_documento_que_se_puede_escribir(
+        self,
+    ):
+        source = self.make_move("fe")
+        target = self.make_move("fe")
+        associated = self.associate(source)
+        manager = self.make_user("gerente_asociado_ok", "account.group_account_manager")
+        associated.with_user(manager).move_id = target
+        self.assertEqual(associated.move_id, target)
+
     # === Transportes entre empresas ===
 
     def transport_of_other_company(self):

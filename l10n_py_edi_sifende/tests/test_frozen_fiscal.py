@@ -2,6 +2,7 @@ from datetime import date
 
 from lxml import etree
 
+from odoo import Command
 from odoo.exceptions import UserError
 from odoo.tests import tagged
 
@@ -164,6 +165,38 @@ class TestFrozenFiscal(SifendeCommon):
             associated.cdc = "1" * 44
         with self.assertRaisesRegex(UserError, "fiscales"):
             associated.unlink()
+
+    def test_un_documento_asociado_no_se_mueve_a_un_documento_congelado(self):
+        source = self.make_move("fe")
+        associated = self.associate(source)
+        accepted = self.accepted(self.make_move("fe"))
+        pending = self.make_move("fe")
+        pending.l10n_py_edi_status = "error"
+        pending.l10n_py_sifende_reintento_misma_clave = True
+        self.assertFalse(pending.l10n_py_cdc)
+        for target in (accepted, pending):
+            with self.subTest(target=target.l10n_py_edi_status):
+                with self.assertRaisesRegex(UserError, "fiscales"):
+                    associated.move_id = target
+                with self.assertRaisesRegex(UserError, "fiscales"):
+                    target.write(
+                        {
+                            "l10n_py_associated_document_ids": [
+                                Command.link(associated.id)
+                            ]
+                        }
+                    )
+                associated.invalidate_recordset()
+                self.assertEqual(associated.move_id, source)
+                self.assertEqual(source.l10n_py_associated_document_ids, associated)
+                self.assertFalse(target.l10n_py_associated_document_ids)
+
+    def test_un_documento_asociado_se_mueve_entre_documentos_editables(self):
+        source = self.make_move("fe")
+        target = self.make_move("fe")
+        associated = self.associate(source)
+        associated.move_id = target
+        self.assertEqual(target.l10n_py_associated_document_ids, associated)
 
     def test_los_documentos_asociados_se_editan_antes_de_enviar(self):
         move = self.make_move("fe")
