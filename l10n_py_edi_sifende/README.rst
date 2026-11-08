@@ -142,12 +142,21 @@ Usage
     documento (el mensaje lo indica), **Reintentar** usa la misma clave
     y no se duplica; mientras tanto el documento no vuelve a borrador y
     sus datos no se modifican, para que el reintento envíe exactamente
-    lo mismo. Si el *Error* es un fallo definitivo del envío a SIFEN, el
-    documento ya tiene CDC y número tomados: **Reintentar** no lo
-    reemite y muestra el procedimiento. Reintentá el lote desde el panel
-    de Sifende o pedíselo a soporte; Odoo consulta el documento cada
-    hora y lo actualiza solo (*Procesando* y luego *Aceptado*) cuando
-    vuelve a procesarse con el mismo CDC.
+    lo mismo. Odoo guarda la solicitud original y la reenvía tal cual:
+    si mientras tanto cambiaste el contacto, el producto o la unidad de
+    medida, esos cambios no viajan en el reintento y quedan para el
+    próximo documento. Esa solicitud contiene los datos fiscales
+    completos: solo la ve el administrador del sistema, aunque quien
+    factura la reenvía igual. Si el reintento falla antes de llegar a
+    Sifende (sin permisos, API key vacía, ambiente que no coincide), el
+    intento sigue abierto: corregí la configuración y **Reintentar**
+    vuelve a usar la misma clave y la misma solicitud. Si el *Error* es
+    un fallo definitivo del envío a SIFEN, el documento ya tiene CDC y
+    número tomados: **Reintentar** no lo reemite y muestra el
+    procedimiento. Reintentá el lote desde el panel de Sifende o
+    pedíselo a soporte; Odoo consulta el documento cada hora y lo
+    actualiza solo (*Procesando* y luego *Aceptado*) cuando vuelve a
+    procesarse con el mismo CDC.
 
 4.  En una nota de crédito o de débito, elegí el *Motivo de emisión* en
     la pestaña *Facturación electrónica*. El documento asociado se
