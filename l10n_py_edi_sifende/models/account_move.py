@@ -425,6 +425,8 @@ class AccountMove(models.Model):
     def _prepare_edi_document_data(self):
         data = super()._prepare_edi_document_data()
         if self._l10n_py_sifende_connector():
+            if self.l10n_py_authorization_id:
+                data.update(self._l10n_py_sifende_fiscal_identity())
             data["sifende"] = self._l10n_py_sifende_extra_data()
         return data
 
@@ -567,10 +569,7 @@ class AccountMove(models.Model):
         code = self.l10n_latam_document_type_id.code
         if not self.invoice_date:
             errors.append(self.env._("Indique la fecha de la factura."))
-        if not (self.journal_id.l10n_py_authorization_id.name or "").strip().isdigit():
-            errors.append(
-                self.env._("El número de timbrado debe ser numérico para Sifende.")
-            )
+        errors.extend(self._l10n_py_sifende_authorization_errors())
         if (
             code in (DOC_INVOICE, DOC_SELF_INVOICE)
             and self.l10n_py_payment_type == PAYMENT_CHEQUE
@@ -608,6 +607,61 @@ class AccountMove(models.Model):
                     )
                 )
         return errors
+
+    def _l10n_py_sifende_authorization_errors(self):
+        # la identidad fiscal sale del timbrado asignado al documento, no del diario
+        self.ensure_one()
+        authorization = self.l10n_py_authorization_id
+        if not authorization:
+            return [self.env._("Indique el timbrado del documento.")]
+        errors = []
+        if not (authorization.name or "").strip().isdigit():
+            errors.append(
+                self.env._("El número de timbrado debe ser numérico para Sifende.")
+            )
+        if authorization.company_id != self.company_id or (
+            authorization.l10n_latam_document_type_id
+            != self.l10n_latam_document_type_id
+        ):
+            errors.append(
+                self.env._(
+                    "El timbrado %(timbrado)s no es de la empresa o del tipo de "
+                    "documento de este documento.",
+                    timbrado=authorization.name,
+                )
+            )
+        today = fields.Date.today()
+        if not authorization.active or not (
+            authorization.date_from <= today <= authorization.date_to
+        ):
+            errors.append(
+                self.env._(
+                    "El timbrado %(timbrado)s del documento está vencido, inactivo o "
+                    "todavía no está vigente.",
+                    timbrado=authorization.name,
+                )
+            )
+        return errors
+
+    def _l10n_py_sifende_fiscal_identity(self):
+        """Timbrado, establecimiento y punto del documento: los de su timbrado."""
+        self.ensure_one()
+        authorization = self.l10n_py_authorization_id
+        return {
+            "establecimiento": authorization.establishment,
+            "punto": authorization.expedition_point,
+            "timbrado": authorization.name or "",
+            "timbradoFechaInicio": (
+                authorization.date_from.strftime("%Y-%m-%d")
+                if authorization.date_from
+                else ""
+            ),
+            "timbradoFechaFin": (
+                authorization.date_to.strftime("%Y-%m-%d")
+                if authorization.date_to
+                else ""
+            ),
+        }
 
     def _validate_edi_data(self):
         if self._l10n_py_sifende_connector():
