@@ -6,6 +6,8 @@ from psycopg2.errors import SerializationFailure
 from odoo import SUPERUSER_ID, api
 from odoo.tools import SQL
 
+from .client import SEND_CONFIRMED, SEND_DEFINITIVE
+
 FIELDS = ("l10n_py_sifende_event_key", "l10n_py_sifende_event_request")
 RESERVE_ATTEMPTS = 3
 
@@ -26,6 +28,20 @@ def get_or_create(record, build_request):
     request = build_request()
     key, stored = _reserve(record, key or str(uuid.uuid4()), json.dumps(request))
     return key, json.loads(stored)
+
+
+def settle(record, outcome):
+    """End an event send with the same outcomes as a document's attempt.
+
+    Confirmed: the key and the request go with the caller's transaction, which
+    also changes the state of the record. Definitive: they go in another cursor,
+    because OCA raises a UserError and its rollback would bring them back.
+    Uncertain, or not sent: they stay reserved for the retry.
+    """
+    if outcome == SEND_CONFIRMED:
+        forget(record, committed=False)
+    elif outcome == SEND_DEFINITIVE:
+        forget(record, committed=True)
 
 
 def forget(record, committed):

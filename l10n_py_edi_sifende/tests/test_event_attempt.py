@@ -8,6 +8,8 @@ from odoo.exceptions import UserError
 from odoo.tests import tagged
 from odoo.tools import mute_logger
 
+from odoo.addons.l10n_py_edi_sifende.services import client, event_key
+
 from .common import CDC, FakeResponse, SifendeCommon, problem
 
 CANCEL_URL = rf"/documento-electronico/{CDC}/cancelar$"
@@ -315,3 +317,46 @@ class TestEventAttempt(SifendeCommon):
         with self.assertRaises(UserError):
             inutilization.write({"motive": "Otro motivo distinto del original"})
         inutilization.write({"motive": inutilization.motive})
+
+    # === El vocabulario común ===
+
+    def test_is_uncertain_distingue_el_409_de_un_evento_del_de_un_documento(self):
+        slug = "https://sifende.com.py/docs/solucion-problemas/"
+        cases = (
+            # estado, tipo del problema, documento, evento
+            (200, None, False, False),
+            (400, None, False, False),
+            (404, None, False, False),
+            (409, None, False, True),
+            (409, "document-number-in-use", False, True),
+            (409, "idempotency-in-progress", True, True),
+            (422, "idempotency-upstream-unknown", True, True),
+            (429, None, True, True),
+            (500, None, True, True),
+            (503, "internal-error", True, True),
+            (504, None, True, True),
+        )
+        for status, problem_type, document, event in cases:
+            with self.subTest(status=status, problem_type=problem_type):
+                body = {"type": slug + problem_type} if problem_type else {}
+                response = client.SifendeResponse(status, body=body)
+                self.assertEqual(client.is_uncertain(response), document)
+                self.assertEqual(client.is_uncertain(response, event=True), event)
+
+    def test_settle_descarta_la_reserva_solo_si_el_resultado_la_cierra(self):
+        for outcome, kept in (
+            (client.SEND_CONFIRMED, False),
+            (client.SEND_DEFINITIVE, False),
+            (client.SEND_UNCERTAIN, True),
+            (client.SEND_NOT_SENT, True),
+        ):
+            with self.subTest(outcome=outcome):
+                record = self.inutilization()
+                event_key.get_or_create(record, lambda: {"motivo": "Motivo"})
+                self.assertEqual(self.pending(record), (True, True))
+                event_key.settle(record, outcome)
+                self.assertEqual(self.pending(record), (kept, kept))
+
+    def test_settle_sin_registro_no_hace_nada(self):
+        for outcome in (client.SEND_CONFIRMED, client.SEND_DEFINITIVE):
+            event_key.settle(self.env["l10n_py.number.inutilization"], outcome)
