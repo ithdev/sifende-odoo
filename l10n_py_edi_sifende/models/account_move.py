@@ -821,9 +821,20 @@ class AccountMove(models.Model):
 
     def action_send_edi(self):
         self.ensure_one()
-        connector = self._l10n_py_sifende_connector()
-        if not connector:
+        if not self._l10n_py_sifende_connector():
             return super().action_send_edi()
+        return self._sifende_submit()
+
+    def _sifende_submit(self):
+        """One send of the current attempt, from whichever door it comes.
+
+        The button, the OCA wizard, the log retry, the contingency queue and
+        «Reintentar» all end here: an open attempt repeats its key and its stored
+        request, a closed one starts a new attempt, and the outcome is settled in
+        ``_sifende_settle``.
+        """
+        self.ensure_one()
+        connector = self._l10n_py_sifende_connector()
         self._l10n_py_sifende_check_posted()
         connector._sifende_check_environment()
         if self._l10n_py_sifende_is_failed():
@@ -1016,14 +1027,24 @@ class AccountMove(models.Model):
 
     def action_retry_edi(self):
         self.ensure_one()
-        if self._l10n_py_sifende_connector():
-            self._l10n_py_sifende_check_posted()
-            if self.l10n_py_sifende_numero_ocupado:
-                raise UserError(self._l10n_py_sifende_number_steps())
-            if self.l10n_py_edi_status == "rejected" and self.l10n_py_cdc:
-                raise UserError(self._l10n_py_sifende_rejection_steps())
-            if self._l10n_py_sifende_is_failed():
-                raise UserError(self._l10n_py_sifende_failed_steps())
+        if not self._l10n_py_sifende_connector():
+            return super().action_retry_edi()
+        return self._sifende_retry()
+
+    def _sifende_retry(self):
+        """«Reintentar»: the guards that tell the user what to do instead of resending.
+
+        OCA still checks the status and then calls ``action_send_edi``, which lands
+        in ``_sifende_submit``: the attempt is the same one from every door.
+        """
+        self.ensure_one()
+        self._l10n_py_sifende_check_posted()
+        if self.l10n_py_sifende_numero_ocupado:
+            raise UserError(self._l10n_py_sifende_number_steps())
+        if self.l10n_py_edi_status == "rejected" and self.l10n_py_cdc:
+            raise UserError(self._l10n_py_sifende_rejection_steps())
+        if self._l10n_py_sifende_is_failed():
+            raise UserError(self._l10n_py_sifende_failed_steps())
         return super().action_retry_edi()
 
     def _l10n_py_sifende_is_failed(self):
