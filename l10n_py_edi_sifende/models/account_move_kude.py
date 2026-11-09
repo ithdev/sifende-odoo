@@ -19,17 +19,15 @@ class AccountMove(models.Model):
     def _compute_l10n_py_sifende_aviso_fiscal(self):
         for move in self:
             move.l10n_py_sifende_aviso_fiscal = False
-            if (
-                move.state != "posted"
-                or move.l10n_py_edi_status == "accepted"
-                or not move._l10n_py_sifende_is_document()
-            ):
+            # un aceptado no tiene qué avisar: no hace falta buscar el conector
+            if move.state != "posted" or move.l10n_py_edi_status == "accepted":
                 continue
-            if move.l10n_py_edi_status == "cancelled":
+            policy = move._sifende_delivery_policy()
+            if policy["pdf_kind"] == "cancellation_notice":
                 move.l10n_py_sifende_aviso_fiscal = self.env._(
                     "Documento cancelado en SIFEN: sin validez fiscal."
                 )
-            else:
+            elif policy["send_error"]:
                 move.l10n_py_sifende_aviso_fiscal = self.env._(
                     "Sin validez fiscal: SIFEN todavía no aceptó este documento. "
                     "El comprobante es el KuDE, que se entrega al figurar Aceptado."
