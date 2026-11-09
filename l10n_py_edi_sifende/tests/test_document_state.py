@@ -427,3 +427,81 @@ class TestDocumentStateValue(BaseCase):
                     DocumentState.from_body(CDC, {"estado": estado}).approved,
                     estado.startswith("APROBADO"),
                 )
+
+
+@tagged("post_install", "-at_install", "l10n_py_edi_sifende")
+class TestRefreshGate(SifendeCommon):
+    def test_el_dominio_del_cron_coincide_con_wants_refresh(self):
+        # el dominio SQL de _to_sync y el método deciden lo mismo: sin esta prueba
+        # una de las dos reglas puede cambiar sin que la otra se entere
+        Move = self.env["account.move"]
+        move = self.make_move("fe")
+        move.l10n_py_cdc = CDC
+        now = fields.Datetime.now()
+        today = fields.Date.context_today(Move)
+        for status, failed, pending_files, consulted, age in product(
+            ("draft", "to_send", "sent", "processing", "accepted", "rejected")
+            + ("cancelled", "error"),
+            (False, True),
+            (False, True),
+            (None, timedelta(minutes=5), timedelta(hours=2)),
+            (0, 30),
+        ):
+            with self.subTest(
+                status=status,
+                failed=failed,
+                pending_files=pending_files,
+                consulted=consulted,
+                age=age,
+            ):
+                move.write(
+                    {
+                        "l10n_py_edi_status": status,
+                        "l10n_py_sifende_envio_fallido": failed,
+                        "l10n_py_sifende_archivos_pendientes": pending_files,
+                        "l10n_py_sifende_ultima_consulta": consulted
+                        and now - consulted,
+                    }
+                )
+                self.env.cr.execute(
+                    "UPDATE account_move SET invoice_date = %s WHERE id = %s",
+                    (today - timedelta(days=age), move.id),
+                )
+                move.invalidate_recordset(["invoice_date"])
+                stale = consulted is None or consulted > timedelta(hours=1)
+                recent = age <= 10
+                wants = move._sifende_wants_refresh()
+                in_flight = status == "processing" or (status == "error" and failed)
+                expected = wants and (
+                    status == "processing"
+                    or (stale and (recent if status == "accepted" else True))
+                )
+                self.assertEqual(wants, in_flight or status == "accepted")
+                self.assertEqual(
+                    move in Move._l10n_py_sifende_to_sync(self.connector),
+                    bool(expected or pending_files),
+                )
+
+    def test_un_aviso_solo_reabre_un_aceptado_si_anuncia_la_cancelacion(self):
+        move = self.make_move("fe")
+        for status, failed, announced, expected in (
+            ("accepted", False, None, True),
+            ("accepted", False, "CANCELADO", True),
+            ("accepted", False, "APROBADO", False),
+            ("accepted", False, "RECHAZADO", False),
+            ("processing", False, "APROBADO", True),
+            ("processing", False, None, True),
+            ("error", True, "RECHAZADO", True),
+            ("error", False, "CANCELADO", False),
+            ("rejected", False, "CANCELADO", False),
+            ("cancelled", False, None, False),
+            ("draft", False, None, False),
+        ):
+            with self.subTest(status=status, failed=failed, announced=announced):
+                move.write(
+                    {
+                        "l10n_py_edi_status": status,
+                        "l10n_py_sifende_envio_fallido": failed,
+                    }
+                )
+                self.assertIs(move._sifende_wants_refresh(announced), expected)
