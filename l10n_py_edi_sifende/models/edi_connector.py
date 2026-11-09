@@ -448,9 +448,6 @@ class EDIConnector(models.Model):
 
     def _sifende_cancel_document(self, cdc, reason):
         self.ensure_one()
-        reason = (reason or self.env.context.get("l10n_py_cancel_motive") or "").strip()
-        if len(reason) < 5:
-            reason = self.env._("Cancelación solicitada desde Odoo")
         move = (
             self.env["account.move"]
             .sudo()
@@ -459,43 +456,61 @@ class EDIConnector(models.Model):
                 limit=1,
             )
         )
+
+        def build_request():
+            text = (
+                reason or self.env.context.get("l10n_py_cancel_motive") or ""
+            ).strip()
+            if len(text) < 5:
+                text = self.env._("Cancelación solicitada desde Odoo")
+            return {"motivo": text[:500]}
+
         return self._sifende_event(
             "cancel",
             f"/documento-electronico/{cdc}/cancelar",
-            {"motivo": reason[:500]},
+            build_request,
             cdc,
             record=move,
         )
 
     def _sifende_inutilize_range(self, data):
         self.ensure_one()
-        try:
-            timbrado = int(data["timbrado"])
-        except (TypeError, ValueError) as e:
-            raise UserError(self.env._("El timbrado debe ser numérico.")) from e
         inutilization = self.env["l10n_py.number.inutilization"].browse(
             self.env.context.get("l10n_py_inutilization_id")
         )
-        authorization = inutilization.authorization_id
-        code = authorization.l10n_latam_document_type_id.code
-        payload = {
-            "numeroTimbrado": timbrado,
-            "establecimiento": data["establecimiento"],
-            "puntoExpedicion": data["punto"],
-            "numeroInicio": data["numeroDesde"],
-            "numeroFin": data["numeroHasta"],
-            "tipoDocumento": int(code or data["tipoDocumento"]),
-            "motivo": (data.get("motivo") or "").strip()[:500],
-        }
-        # OCA propone «AA» en todo timbrado y no lo muestra: no es una serie real
-        if authorization.series and authorization.series != DEFAULT_SERIES:
-            payload["serie"] = authorization.series
+
+        def build_request():
+            try:
+                timbrado = int(data["timbrado"])
+            except (TypeError, ValueError) as e:
+                raise UserError(self.env._("El timbrado debe ser numérico.")) from e
+            authorization = inutilization.authorization_id
+            code = authorization.l10n_latam_document_type_id.code
+            payload = {
+                "numeroTimbrado": timbrado,
+                "establecimiento": data["establecimiento"],
+                "puntoExpedicion": data["punto"],
+                "numeroInicio": data["numeroDesde"],
+                "numeroFin": data["numeroHasta"],
+                "tipoDocumento": int(code or data["tipoDocumento"]),
+                "motivo": (data.get("motivo") or "").strip()[:500],
+            }
+            # OCA propone «AA» en todo timbrado y no lo muestra: no es una serie real
+            if authorization.series and authorization.series != DEFAULT_SERIES:
+                payload["serie"] = authorization.series
+            return payload
+
         return self._sifende_event(
-            "event", "/documento-electronico/inutilizar", payload, record=inutilization
+            "event",
+            "/documento-electronico/inutilizar",
+            build_request,
+            record=inutilization,
         )
 
-    def _sifende_event(self, operation, path, payload, cdc=None, record=None):
-        key = event_key.get_or_create(record)
+    def _sifende_event(self, operation, path, build_request, cdc=None, record=None):
+        # la clave y la solicitud van juntas: un reintento tras un resultado
+        # incierto reenvía lo mismo aunque el asistente o el timbrado hayan cambiado
+        key, payload = event_key.get_or_create(record, build_request)
         try:
             response = self._sifende_client().request(
                 "POST",
