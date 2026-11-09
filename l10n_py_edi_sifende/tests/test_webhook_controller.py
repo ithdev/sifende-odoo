@@ -265,6 +265,41 @@ class TestWebhookController(SifendeCommon, HttpCase):
         self.assertEqual(move.l10n_py_edi_status, "rejected")
         self.assertTrue(self.events().filtered(lambda e: e.event_id == "evt-fail"))
 
+    def assert_failed_query_is_recoverable(self, failure, logged_as_success):
+        move = self.processing_move()
+        status_logs = self.env["l10n_py.edi.log"].search(
+            [("provider", "=", "sifende"), ("operation_type", "=", "status")]
+        )
+        self.fake.add("GET", rf"/documento-electronico/status/{CDC}$", failure)
+        response = self.post("documento.rechazado", event_id="evt-fail")
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(move.l10n_py_edi_status, "processing")
+        self.assertFalse(self.events())
+        new_logs = (
+            self.env["l10n_py.edi.log"].search(
+                [("provider", "=", "sifende"), ("operation_type", "=", "status")]
+            )
+            - status_logs
+        )
+        self.assertEqual(len(new_logs), 1)
+        self.assertEqual(new_logs.success, logged_as_success)
+        self.route_status("CANCELADO")
+        response = self.post("documento.cancelado", event_id="evt-fail")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(move.l10n_py_edi_status, "cancelled")
+        self.assertTrue(self.events().filtered(lambda e: e.event_id == "evt-fail"))
+
+    def test_consulta_con_503_responde_recuperable(self):
+        self.assert_failed_query_is_recoverable(
+            FakeResponse(503, {"detail": "no disponible"}), False
+        )
+
+    def test_consulta_sin_estado_responde_recuperable(self):
+        self.assert_failed_query_is_recoverable(FakeResponse(200, {"cdc": CDC}), True)
+
+    def test_consulta_que_no_es_un_objeto_responde_recuperable(self):
+        self.assert_failed_query_is_recoverable(FakeResponse(200, ["x"]), True)
+
     def test_kude_en_preparacion_queda_pendiente_para_el_cron(self):
         move = self.processing_move()
         self.fake.add(
