@@ -11,7 +11,7 @@ from odoo import http
 from odoo.http import request
 
 from ..models.edi_connector import WEBHOOK_PATH
-from ..services.document_state import WEBHOOK_STATES
+from ..services.document_state import WEBHOOK_STATES, StatusUnavailable
 
 _logger = logging.getLogger(__name__)
 
@@ -107,9 +107,11 @@ class SifendeWebhookController(http.Controller):
         event = request.env["l10n_py.sifende.webhook.event"].register(
             connector, event_id, event_type
         )
-        if event and not move._l10n_py_sifende_apply_webhook(
-            connector, event_type, data
-        ):
+        if not event:
+            return 200
+        try:
+            move._l10n_py_sifende_apply_webhook(connector, event_type, data)
+        except StatusUnavailable:
             # sin la consulta de estado el aviso no se pudo aplicar: solo se libera el
             # registro del evento para que la reentrega se procese. No hay rollback,
             # así que queda la traza de la consulta fallida en el log EDI.
