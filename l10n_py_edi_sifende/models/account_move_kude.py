@@ -37,8 +37,22 @@ class AccountMove(models.Model):
 
     def _l10n_py_sifende_is_document(self):
         self.ensure_one()
-        return self.move_type in SALE_MOVE_TYPES and bool(
-            self._l10n_py_sifende_connector()
+        if self.move_type not in SALE_MOVE_TYPES:
+            return False
+        if self._l10n_py_sifende_connector():
+            return True
+        # archivar el conector no cambia quién emitió un documento ya enviado
+        return bool(self.l10n_py_cdc) and bool(
+            self.env["l10n_py.edi.connector"]
+            .sudo()
+            .with_context(active_test=False)
+            .search_count(
+                [
+                    ("company_id", "=", self.company_id.id),
+                    ("provider_type", "=", "sifende"),
+                ],
+                limit=1,
+            )
         )
 
     def _l10n_py_sifende_has_kude(self):
@@ -98,8 +112,13 @@ class AccountMove(models.Model):
         self.ensure_one()
         if self.l10n_py_kude_pdf and self.l10n_py_edi_xml:
             return
+        connector = self._l10n_py_sifende_connector()
+        if not connector:
+            # conector archivado: no hay a quién pedirle los archivos; quien llama
+            # avisa que faltan
+            return
         self.check_access("write")
-        self._l10n_py_sifende_fetch_files(self._l10n_py_sifende_connector())
+        self._l10n_py_sifende_fetch_files(connector)
 
     def _l10n_py_sifende_missing_file_error(self, label):
         return UserError(
