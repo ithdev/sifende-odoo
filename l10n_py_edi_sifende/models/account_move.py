@@ -8,7 +8,12 @@ from odoo import SUPERUSER_ID, api, fields, models
 from odoo.exceptions import UserError
 
 from ..services.client import SifendeTransportError
-from .edi_connector import APPROVED_STATES, KUDE_MAX_WAIT
+from ..services.document_state import (
+    APPROVED_STATES,
+    RESUBMITTED_STATES,
+    WEBHOOK_STATES,
+)
+from .edi_connector import KUDE_MAX_WAIT
 
 _logger = logging.getLogger(__name__)
 
@@ -28,7 +33,6 @@ DOC_CREDIT_NOTE = "5"
 DOC_DEBIT_NOTE = "6"
 DOC_DELIVERY_NOTE = "7"
 CAPITAL_DEPARTMENT_CODE = 1
-RESUBMITTED_STATES = ("PENDIENTE", "EN_LOTE", "ENVIADO")
 FROZEN_PAYMENT_FIELDS = (
     "l10n_py_payment_type",
     "l10n_py_sifende_cheque_numero",
@@ -65,11 +69,6 @@ FROZEN_FISCAL_FIELDS = (
     "l10n_py_afe_provision_district",
     "l10n_py_afe_provision_city",
 )
-WEBHOOK_STATES = {
-    "documento.aprobado": "APROBADO",
-    "documento.rechazado": "RECHAZADO",
-    "documento.cancelado": "CANCELADO",
-}
 
 
 class AccountMove(models.Model):
