@@ -339,6 +339,23 @@ class AccountMove(models.Model):
             and self._l10n_py_sifende_connector()
         )
 
+    def _l10n_py_sifende_closed_attempt(self):
+        """El último envío terminó con un resultado definitivo.
+
+        Su clave de idempotencia ya no sirve: Sifende contesta
+        ``idempotency-key-reused`` si recibe otra solicitud con ella.
+        """
+        self.ensure_one()
+        return (
+            self.l10n_py_edi_status in ("error", "rejected")
+            and not self.l10n_py_sifende_reintento_misma_clave
+        )
+
+    def _l10n_py_sifende_renew_attempt(self):
+        """Empezar un intento nuevo, con otra clave de idempotencia."""
+        self.ensure_one()
+        self.l10n_py_sifende_intento += 1
+
     @api.depends(
         "company_id",
         "l10n_py_cdc",
@@ -405,6 +422,13 @@ class AccountMove(models.Model):
                         name=move.l10n_py_cdc or move.name,
                     )
                 )
+        for move in self:
+            # al volver a publicar el estado pasa a «Para enviar»: el intento
+            # cerrado se descarta aquí, donde todavía se lo reconoce
+            if move._l10n_py_sifende_connector() and (
+                move._l10n_py_sifende_closed_attempt()
+            ):
+                move._l10n_py_sifende_renew_attempt()
         return super().button_draft()
 
     def write(self, vals):
@@ -793,6 +817,10 @@ class AccountMove(models.Model):
         else:
             self._l10n_py_sifende_link_origin_document()
             self._validate_edi_data()
+            # cualquier camino de envío (botón, asistente, registro, cola de
+            # contingencia, reintento) abre un intento nuevo tras uno cerrado
+            if self._l10n_py_sifende_closed_attempt():
+                self._l10n_py_sifende_renew_attempt()
             document_data = self._prepare_edi_document_data()
         self.l10n_py_edi_status = "sent"
         try:
@@ -902,12 +930,12 @@ class AccountMove(models.Model):
         old_number = self.l10n_py_invoice_number
         number = self._l10n_py_sifende_free_number()
         self._l10n_py_sifende_set_attempt(False)
+        self._l10n_py_sifende_renew_attempt()
         self.write(
             {
                 "l10n_py_invoice_number": number,
                 "l10n_py_sifende_numero_ocupado": False,
                 "l10n_py_sifende_cdc_existente": False,
-                "l10n_py_sifende_intento": self.l10n_py_sifende_intento + 1,
                 "l10n_py_edi_status": "to_send",
                 "l10n_py_edi_message": self.env._(
                     "Renumerado: el número %(old)s ya estaba en uso en Sifende y "
@@ -962,11 +990,6 @@ class AccountMove(models.Model):
                 raise UserError(self._l10n_py_sifende_rejection_steps())
             if self._l10n_py_sifende_is_failed():
                 raise UserError(self._l10n_py_sifende_failed_steps())
-            if (
-                self.l10n_py_edi_status in ("error", "rejected")
-                and not self.l10n_py_sifende_reintento_misma_clave
-            ):
-                self.l10n_py_sifende_intento += 1
         return super().action_retry_edi()
 
     def _l10n_py_sifende_is_failed(self):
