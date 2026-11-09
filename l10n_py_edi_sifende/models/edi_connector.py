@@ -15,6 +15,7 @@ from ..services.client import (
     is_secure_url,
     mask_key,
 )
+from ..services.document_state import APPROVED_STATES
 from ..services.request_builder import SifendeRequestBuilder
 
 DEFAULT_BASE_URL = "https://api.sifende.com.py"
@@ -30,8 +31,6 @@ SETUP_SLUGS = (
     "idempotency-key-reused",
 )
 
-APPROVED_STATES = ("APROBADO", "APROBADO_OBSERVACION")
-PENDING_STATES = ("PENDIENTE", "EN_LOTE")
 # estados de un evento (cancelación, inutilización): sólo APROBADO lo confirma
 EVENT_APPROVED_STATES = ("APROBADO",)
 EVENT_REJECTED_STATE = "RECHAZADO"
