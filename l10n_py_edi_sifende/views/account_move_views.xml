@@ -6,6 +6,32 @@
         <field name="view_mode">form</field>
         <field name="target">new</field>
     </record>
+    <record id="view_l10n_py_edi_cancel_wizard_sifende" model="ir.ui.view">
+        <field name="name">l10n_py.edi.cancel.wizard.form.sifende</field>
+        <field name="model">l10n_py.edi.cancel.wizard</field>
+        <field
+            name="inherit_id"
+            ref="l10n_py_edi_base.view_l10n_py_edi_cancel_wizard"
+        />
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='invoice_id']" position="before">
+                <field name="l10n_py_sifende_pending" invisible="1" />
+                <div
+                    class="alert alert-warning"
+                    role="alert"
+                    colspan="2"
+                    invisible="not l10n_py_sifende_pending"
+                >
+                    Hay una cancelación pendiente de confirmación en Sifende: se
+                    reenviará con el motivo original, que no se puede cambiar.
+                </div>
+            </xpath>
+            <xpath expr="//field[@name='motive']" position="attributes">
+                <attribute name="readonly">l10n_py_sifende_pending</attribute>
+                <attribute name="force_save">1</attribute>
+            </xpath>
+        </field>
+    </record>
     <record id="view_move_form_edi_sifende" model="ir.ui.view">
         <field name="name">account.move.form.edi.sifende</field>
         <field name="model">account.move</field>

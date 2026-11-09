@@ -102,6 +102,8 @@ class AccountMove(models.Model):
     l10n_py_sifende_archivos_pendientes = fields.Boolean(copy=False)
     l10n_py_sifende_ultima_consulta = fields.Datetime(copy=False, readonly=True)
     l10n_py_sifende_event_key = fields.Char(copy=False, readonly=True)
+    # solicitud (JSON) ligada a la clave del evento: ver services/event_key.py
+    l10n_py_sifende_event_request = fields.Text(copy=False, readonly=True)
     l10n_py_sifende_motivo_emision = fields.Selection(
         [
             ("1", "Devolución y ajuste de precios"),
