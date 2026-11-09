@@ -67,34 +67,32 @@ class AccountMove(models.Model):
         XML se trae aparte: la política dice qué, no lo trae.
         """
         self.ensure_one()
-        if self._l10n_py_sifende_has_kude():
-            pdf_kind, filetypes = "kude", ("pdf", "xml")
-        elif self._l10n_py_sifende_is_cancelled_document():
-            pdf_kind, filetypes = "cancellation_notice", ("pdf",)
+        policy = {"pdf_kind": "odoo", "send_error": False, "legal_filetypes": ()}
+        if not self._l10n_py_sifende_is_document():
+            return policy
+        status = self.l10n_py_edi_status
+        if status == "accepted":
+            if self.l10n_py_cdc:
+                policy.update(pdf_kind="kude", legal_filetypes=("pdf", "xml"))
+        elif status == "cancelled":
+            policy["send_error"] = self.env._(
+                "%(name)s fue cancelado en SIFEN: su KuDE ya no es un comprobante "
+                "válido, por eso no se envía.",
+                name=self.name,
+            )
+            if self.state == "posted":
+                # el PDF de Odoo lleva el aviso; el KuDE guardado ya no vale
+                policy.update(pdf_kind="cancellation_notice", legal_filetypes=("pdf",))
         else:
-            pdf_kind, filetypes = "odoo", ()
-        return {
-            "pdf_kind": pdf_kind,
-            "send_error": self._l10n_py_sifende_send_error(),
-            "legal_filetypes": filetypes,
-        }
-
-    def _l10n_py_sifende_has_kude(self):
-        self.ensure_one()
-        return (
-            self.move_type in SALE_MOVE_TYPES
-            and self.l10n_py_edi_status == "accepted"
-            and bool(self.l10n_py_cdc)
-            and self._l10n_py_sifende_is_document()
-        )
-
-    def _l10n_py_sifende_is_cancelled_document(self):
-        self.ensure_one()
-        return (
-            self.l10n_py_edi_status == "cancelled"
-            and self.state == "posted"
-            and self._l10n_py_sifende_is_document()
-        )
+            policy["send_error"] = self.env._(
+                "%(name)s todavía no tiene comprobante fiscal: SIFEN aún no lo aceptó "
+                "(estado: %(status)s). Envíelo cuando figure como Aceptado.",
+                name=self.name,
+                status=dict(self._fields["l10n_py_edi_status"].selection).get(
+                    status, status
+                ),
+            )
+        return policy
 
     def _l10n_py_sifende_cancelled_document(self):
         # el PDF de Odoo lleva el aviso de cancelación; el KuDE guardado ya no vale
@@ -110,27 +108,6 @@ class AccountMove(models.Model):
             "filetype": "pdf",
             "content": content_by_id[self.id],
         }
-
-    def _l10n_py_sifende_send_error(self):
-        """Motivo por el que el documento no puede enviarse como comprobante fiscal."""
-        self.ensure_one()
-        if self.l10n_py_edi_status == "accepted" or not (
-            self._l10n_py_sifende_is_document()
-        ):
-            return False
-        if self.l10n_py_edi_status == "cancelled":
-            return self.env._(
-                "%(name)s fue cancelado en SIFEN: su KuDE ya no es un comprobante "
-                "válido, por eso no se envía.",
-                name=self.name,
-            )
-        status = dict(self._fields["l10n_py_edi_status"].selection)
-        return self.env._(
-            "%(name)s todavía no tiene comprobante fiscal: SIFEN aún no lo aceptó "
-            "(estado: %(status)s). Envíelo cuando figure como Aceptado.",
-            name=self.name,
-            status=status.get(self.l10n_py_edi_status, self.l10n_py_edi_status),
-        )
 
     def _l10n_py_sifende_ensure_files(self):
         self.ensure_one()
