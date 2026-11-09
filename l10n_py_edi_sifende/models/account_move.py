@@ -1140,16 +1140,35 @@ class AccountMove(models.Model):
 
     def _l10n_py_sifende_sync(self, connector, kude_wait=KUDE_MAX_WAIT):
         self.ensure_one()
-        if (
-            self.l10n_py_edi_status in ("processing", "accepted")
-            or self._l10n_py_sifende_is_failed()
-        ):
+        if self._sifende_wants_refresh():
             # la consulta fallida ya quedó en el log; el cron la reintenta en su turno
             # y, mientras tanto, un documento aceptado sigue con sus archivos
             with suppress(StatusUnavailable):
                 self._l10n_py_sifende_refresh_state(connector)
         if self.l10n_py_edi_status == "accepted":
             self._l10n_py_sifende_fetch_files(connector, kude_wait)
+
+    def _sifende_in_flight(self):
+        """Sifende todavía no dio su respuesta final: está procesando el documento o
+        el envío falló de su lado y puede reintentarlo."""
+        self.ensure_one()
+        return (
+            self.l10n_py_edi_status == "processing" or self._l10n_py_sifende_is_failed()
+        )
+
+    def _sifende_wants_refresh(self, announced=None):
+        """La única respuesta a «¿el estado remoto aún puede cambiar el documento?».
+
+        Un documento en vuelo, sí. Uno aceptado solo puede cambiar por una
+        cancelación: el cron no tiene aviso y lo consulta (hasta CANCEL_WATCH_DAYS,
+        ver _l10n_py_sifende_to_sync), mientras que un aviso de otro estado no
+        justifica la consulta. El resto son estados finales o locales.
+        """
+        self.ensure_one()
+        if self._sifende_in_flight():
+            return True
+        cancellable = announced in (None, "CANCELADO")
+        return self.l10n_py_edi_status == "accepted" and cancellable
 
     def _l10n_py_sifende_refresh_state(self, connector, announced=None, message=None):
         """Aplica el estado vigente en Sifende y lo devuelve (DocumentState).
@@ -1183,7 +1202,7 @@ class AccountMove(models.Model):
         self.ensure_one()
         status = self.l10n_py_edi_status
         failed = self._l10n_py_sifende_is_failed()
-        in_flight = status == "processing" or failed
+        in_flight = self._sifende_in_flight()
         if state in APPROVED_STATES and in_flight:
             self._l10n_py_sifende_set_attempt(False)
             self.write(
@@ -1236,13 +1255,8 @@ class AccountMove(models.Model):
         """Levanta StatusUnavailable si no se pudo consultar el estado vigente."""
         self.ensure_one()
         announced = WEBHOOK_STATES[event_type]
-        status = self.l10n_py_edi_status
         # los avisos pueden llegar desordenados: el estado vigente lo dice la consulta
-        if (
-            status == "processing"
-            or self._l10n_py_sifende_is_failed()
-            or (announced == "CANCELADO" and status == "accepted")
-        ):
+        if self._sifende_wants_refresh(announced):
             results = data.get("resultados")
             message = "\n".join(
                 f"{result.get('codigo')}: {result['mensaje']}"
