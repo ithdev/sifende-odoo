@@ -24,3 +24,5 @@ from . import test_retry_events
 from . import test_event_key_concurrency
 from . import test_attempt_number
 from . import test_document_state
+from . import test_send_attempt
+from . import test_event_attempt
