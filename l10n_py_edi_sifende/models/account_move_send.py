@@ -8,7 +8,7 @@ class AccountMoveSend(models.AbstractModel):
     @api.model
     def _get_invoice_extra_attachments(self, move):
         attachments = super()._get_invoice_extra_attachments(move)
-        if move._l10n_py_sifende_has_kude():
+        if move._sifende_delivery_policy()["pdf_kind"] == "kude":
             attachments |= move._l10n_py_sifende_xml_attachment()
         return attachments
 
@@ -25,7 +25,7 @@ class AccountMoveSend(models.AbstractModel):
         # account_edi_ubl_cii embeds a factur-x.xml in the PDF: the KuDE goes untouched
         for invoice, invoice_data in invoices_data.items():
             values = invoice_data.get("pdf_attachment_values")
-            if values and invoice._l10n_py_sifende_has_kude():
+            if values and invoice._sifende_delivery_policy()["pdf_kind"] == "kude":
                 values["raw"] = invoice._l10n_py_sifende_kude_content()
         return super()._link_invoice_documents(invoices_data)
 
@@ -34,7 +34,7 @@ class AccountMoveSend(models.AbstractModel):
         super()._hook_invoice_document_before_pdf_report_render(invoice, invoice_data)
         if not invoice._l10n_py_sifende_is_document():
             return
-        error = invoice._l10n_py_sifende_send_error()
+        error = invoice._sifende_delivery_policy()["send_error"]
         if not error:
             try:
                 invoice._l10n_py_sifende_prepare_send()
@@ -52,7 +52,7 @@ class AccountMoveSend(models.AbstractModel):
         blocked = {
             invoice
             for invoice in invoices_data
-            if invoice._l10n_py_sifende_send_error()
+            if invoice._sifende_delivery_policy()["send_error"]
         }
         return super()._generate_invoice_fallback_documents(
             {
