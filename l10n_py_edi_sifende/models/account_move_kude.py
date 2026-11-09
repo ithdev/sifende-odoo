@@ -55,6 +55,32 @@ class AccountMove(models.Model):
             )
         )
 
+    def _sifende_delivery_policy(self):
+        """Qué se entrega de este documento, sin hablar con Sifende ni escribir.
+
+        - ``pdf_kind``: ``kude`` (el PDF es el KuDE aceptado), ``cancellation_notice``
+          (el PDF de Odoo con el aviso de cancelación) u ``odoo`` (el de siempre).
+        - ``send_error``: por qué no puede enviarse como comprobante fiscal, o False.
+        - ``legal_filetypes``: lo que se agrega a los documentos legales del portal y
+          de la descarga; vacío es dejar que lo resuelva Odoo.
+
+        Solo lee campos guardados y la existencia del conector (activo o archivado,
+        con sudo), así que sirve igual desde el portal. El contenido del KuDE y del
+        XML se trae aparte: la política dice qué, no lo trae.
+        """
+        self.ensure_one()
+        if self._l10n_py_sifende_has_kude():
+            pdf_kind, filetypes = "kude", ("pdf", "xml")
+        elif self._l10n_py_sifende_is_cancelled_document():
+            pdf_kind, filetypes = "cancellation_notice", ("pdf",)
+        else:
+            pdf_kind, filetypes = "odoo", ()
+        return {
+            "pdf_kind": pdf_kind,
+            "send_error": self._l10n_py_sifende_send_error(),
+            "legal_filetypes": filetypes,
+        }
+
     def _l10n_py_sifende_has_kude(self):
         self.ensure_one()
         return (

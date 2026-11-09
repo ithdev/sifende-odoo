@@ -1,5 +1,7 @@
 import base64
 import itertools
+import threading
+from contextlib import contextmanager
 from unittest.mock import patch
 
 from odoo.exceptions import UserError
@@ -136,6 +138,22 @@ class DeliveryCommon(SifendeCommon):
         elif connector == "absent":
             self.connector.unlink()
         self.env.flush_all()
+
+    @contextmanager
+    def recorded_queries(self):
+        """Las consultas SQL que se hacen dentro del bloque (ya vaciado el caché)."""
+        queries = []
+        thread = threading.current_thread()
+        hooks = getattr(thread, "query_hooks", [])
+        self.env.flush_all()
+        thread.query_hooks = [
+            *hooks,
+            lambda _cr, query, *_args: queries.append(str(query).strip()),
+        ]
+        try:
+            yield queries
+        finally:
+            thread.query_hooks = hooks
 
     def cells(self):
         for status, state, move_type, has_cdc in itertools.product(
@@ -288,3 +306,53 @@ class TestDeliveryPredicates(DeliveryCommon):
 
     def test_sin_conector(self):
         self.check_connector("absent")
+
+
+@tagged("post_install", "-at_install", "l10n_py_edi_sifende")
+class TestDeliveryPolicy(DeliveryCommon):
+    """La política de entrega contesta la tabla de verdad, sin red ni escrituras."""
+
+    def check_connector(self, connector):
+        self.set_connector(connector)
+        for status, state, move_type, has_cdc in itertools.product(
+            STATUSES, MOVE_STATES, MOVE_TYPES, CDCS
+        ):
+            with self.subTest(
+                connector=connector, cell=(status, state, move_type, has_cdc)
+            ):
+                move = self.moves[move_type, state].sudo()
+                self.set_cell(move, status, has_cdc, False)
+                want = expected(status, state, connector, move_type, has_cdc)
+                policy = move._sifende_delivery_policy()
+                self.assertEqual(
+                    set(policy), {"pdf_kind", "send_error", "legal_filetypes"}
+                )
+                self.assertEqual(policy["pdf_kind"], want["pdf_kind"])
+                self.assertEqual(policy["legal_filetypes"], want["legal_filetypes"])
+                self.assertEqual(bool(policy["send_error"]), bool(want["send_error"]))
+                if want["send_error"]:
+                    self.assertIn(want["send_error"], policy["send_error"])
+                else:
+                    self.assertIs(policy["send_error"], False)
+        self.assertFalse(self.fake.calls)
+
+    def test_con_el_conector_activo(self):
+        self.check_connector("active")
+
+    def test_con_el_conector_archivado(self):
+        self.check_connector("archived")
+
+    def test_sin_conector(self):
+        self.check_connector("absent")
+
+    def test_la_politica_no_escribe_ni_consulta_a_sifende(self):
+        move = self.moves["out_invoice", "posted"]
+        self.set_cell(move, "cancelled", True, True)
+        move.invalidate_recordset()
+        with self.recorded_queries() as queries:
+            move._sifende_delivery_policy()
+            self.env.flush_all()
+        self.assertTrue(queries)
+        writes = [q[:60] for q in queries if not q.upper().startswith("SELECT")]
+        self.assertFalse(writes)
+        self.assertFalse(self.fake.calls)
