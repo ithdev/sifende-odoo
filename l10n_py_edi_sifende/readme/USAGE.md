@@ -13,7 +13,8 @@
    hasta 200 documentos por conector, empezando por los que hace más tiempo no se consultan,
    sea de la empresa que sea, para que ninguna se quede sin turno.
 3. Si el documento queda con *Rechazado* antes de llegar a SIFEN (por ejemplo por un campo
-   obligatorio), corregí el dato y pulsá **Reintentar**: usa una clave de idempotencia nueva.
+   obligatorio), corregí el dato y pulsá **Reintentar** (o **Enviar a EDI**): usa una clave de
+   idempotencia nueva. Lo mismo vale si lo volvés a borrador y lo publicás de nuevo.
    Si queda con *Error* por un fallo de conexión o de Sifende antes de registrar el documento
    (el mensaje lo indica), **Reintentar** usa la misma clave y no se duplica; mientras tanto el
    documento no vuelve a borrador y sus datos no se modifican, para que el reintento envíe

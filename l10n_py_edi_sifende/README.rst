@@ -141,15 +141,16 @@ Usage
 
 3.  Si el documento queda con *Rechazado* antes de llegar a SIFEN (por
     ejemplo por un campo obligatorio), corregí el dato y pulsá
-    **Reintentar**: usa una clave de idempotencia nueva. Si queda con
-    *Error* por un fallo de conexión o de Sifende antes de registrar el
-    documento (el mensaje lo indica), **Reintentar** usa la misma clave
-    y no se duplica; mientras tanto el documento no vuelve a borrador y
-    sus datos no se modifican, para que el reintento envíe exactamente
-    lo mismo. Odoo guarda la solicitud original y la reenvía tal cual:
-    si mientras tanto cambiaste el contacto, el producto o la unidad de
-    medida, esos cambios no viajan en el reintento y quedan para el
-    próximo documento. Esa solicitud contiene los datos fiscales
+    **Reintentar** (o **Enviar a EDI**): usa una clave de idempotencia
+    nueva. Lo mismo vale si lo volvés a borrador y lo publicás de nuevo.
+    Si queda con *Error* por un fallo de conexión o de Sifende antes de
+    registrar el documento (el mensaje lo indica), **Reintentar** usa la
+    misma clave y no se duplica; mientras tanto el documento no vuelve a
+    borrador y sus datos no se modifican, para que el reintento envíe
+    exactamente lo mismo. Odoo guarda la solicitud original y la reenvía
+    tal cual: si mientras tanto cambiaste el contacto, el producto o la
+    unidad de medida, esos cambios no viajan en el reintento y quedan
+    para el próximo documento. Esa solicitud contiene los datos fiscales
     completos: solo la ve el administrador del sistema, aunque quien
     factura la reenvía igual. Si el reintento falla antes de llegar a
     Sifende (sin permisos, API key vacía, ambiente que no coincide), el
