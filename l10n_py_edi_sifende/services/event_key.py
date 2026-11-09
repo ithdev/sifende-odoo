@@ -1,9 +1,13 @@
 import json
 import uuid
 
+from psycopg2.errors import SerializationFailure
+
 from odoo import SUPERUSER_ID, api
+from odoo.tools import SQL
 
 FIELDS = ("l10n_py_sifende_event_key", "l10n_py_sifende_event_request")
+RESERVE_ATTEMPTS = 3
 
 
 def get_or_create(record, build_request):
@@ -19,28 +23,61 @@ def get_or_create(record, build_request):
     key, stored = record.l10n_py_sifende_event_key, record.l10n_py_sifende_event_request
     if key and stored:
         return key, json.loads(stored)
-    # otro cursor: el rollback del error que ve el usuario no puede perderla
     request = build_request()
-    key = key or str(uuid.uuid4())
-    _write(
-        record,
-        {
-            "l10n_py_sifende_event_key": key,
-            "l10n_py_sifende_event_request": json.dumps(request),
-        },
-        committed=True,
-    )
-    return key, request
+    key, stored = _reserve(record, key or str(uuid.uuid4()), json.dumps(request))
+    return key, json.loads(stored)
 
 
 def forget(record, committed):
-    if record and record.sudo().l10n_py_sifende_event_key:
+    # sin mirar la clave antes: la transacción que llama puede tener una lectura
+    # anterior a la reserva, que se confirmó en otro cursor
+    if record:
         _write(record, dict.fromkeys(FIELDS, False), committed)
 
 
 def pending_request(record):
     stored = record.sudo().l10n_py_sifende_event_request if record else False
     return json.loads(stored) if stored else {}
+
+
+def _reserve(record, key, request):
+    """Store the key and request unless another transaction already did.
+
+    Two transactions can read an empty key at the same time. The row is locked in
+    another cursor, so that the rollback of the error the user sees cannot lose the
+    reservation, and what is stored there wins over what the caller read. Whoever
+    arrives second gets the key and request of the first. The lock is FOR NO KEY
+    UPDATE: it still serializes two reservations, but does not wait for the KEY SHARE
+    lock the caller itself may hold on the row (for example, after creating a record
+    that references it in the same transaction), which would never be released.
+    """
+    for attempt in range(RESERVE_ATTEMPTS):
+        try:
+            with record.pool.cursor() as cr:
+                cr.execute(
+                    SQL(
+                        "SELECT %s FROM %s WHERE id = %s FOR NO KEY UPDATE",
+                        SQL(", ").join(SQL.identifier(name) for name in FIELDS),
+                        SQL.identifier(record._table),
+                        record.id,
+                    )
+                )
+                stored_key, stored_request = cr.fetchone() or (None, None)
+                if not (stored_key and stored_request):
+                    stored_key = stored_key or key
+                    stored_request = request
+                    env = api.Environment(cr, SUPERUSER_ID, {})
+                    env[record._name].browse(record.id).write(
+                        dict(zip(FIELDS, (stored_key, stored_request), strict=True))
+                    )
+            break
+        except SerializationFailure:
+            # the other transaction committed after this snapshot was taken: the
+            # next one sees its key
+            if attempt == RESERVE_ATTEMPTS - 1:
+                raise
+    record.invalidate_recordset(FIELDS)
+    return stored_key, stored_request
 
 
 def _write(record, values, committed):
