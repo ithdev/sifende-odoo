@@ -230,35 +230,48 @@ class AccountMove(models.Model):
 
     def _get_invoice_legal_documents(self, filetype, allow_fallback=False):
         self.ensure_one()
-        if filetype == "pdf" and self._l10n_py_sifende_is_cancelled_document():
-            if self.invoice_pdf_report_id or allow_fallback:
-                return self._l10n_py_sifende_cancelled_document()
-        if filetype == "pdf" and self._l10n_py_sifende_has_kude():
-            if self.l10n_py_kude_pdf or allow_fallback:
-                return self._l10n_py_sifende_kude_document()
+        policy = self._sifende_delivery_policy()
+        kind = policy["pdf_kind"]
+        if filetype == "pdf" and filetype in policy["legal_filetypes"]:
+            stored = (
+                self.invoice_pdf_report_id
+                if kind == "cancellation_notice"
+                else self.l10n_py_kude_pdf
+            )
+            if stored or allow_fallback:
+                return self._l10n_py_sifende_legal_document(kind, filetype)
         return super()._get_invoice_legal_documents(
             filetype, allow_fallback=allow_fallback
         )
 
     def _get_invoice_legal_documents_all(self, allow_fallback=False):
         self.ensure_one()
-        if self._l10n_py_sifende_is_cancelled_document() and (
-            allow_fallback or self.invoice_pdf_report_id
-        ):
-            return [self._l10n_py_sifende_cancelled_document()]
-        if self._l10n_py_sifende_has_kude() and (
-            allow_fallback or (self.l10n_py_kude_pdf and self.l10n_py_edi_xml)
+        policy = self._sifende_delivery_policy()
+        kind = policy["pdf_kind"]
+        if policy["legal_filetypes"] and (
+            allow_fallback
+            or (
+                self.invoice_pdf_report_id
+                if kind == "cancellation_notice"
+                else self.l10n_py_kude_pdf and self.l10n_py_edi_xml
+            )
         ):
             return [
-                self._l10n_py_sifende_kude_document(),
-                {
-                    "filename": self.l10n_py_edi_xml_filename
-                    or f"{self.l10n_py_cdc}.xml",
-                    "filetype": "xml",
-                    "content": self._l10n_py_sifende_xml_content(),
-                },
+                self._l10n_py_sifende_legal_document(kind, filetype)
+                for filetype in policy["legal_filetypes"]
             ]
         return super()._get_invoice_legal_documents_all(allow_fallback=allow_fallback)
+
+    def _l10n_py_sifende_legal_document(self, pdf_kind, filetype):
+        if pdf_kind == "cancellation_notice":
+            return self._l10n_py_sifende_cancelled_document()
+        if filetype == "pdf":
+            return self._l10n_py_sifende_kude_document()
+        return {
+            "filename": self.l10n_py_edi_xml_filename or f"{self.l10n_py_cdc}.xml",
+            "filetype": filetype,
+            "content": self._l10n_py_sifende_xml_content(),
+        }
 
     def _l10n_py_sifende_kude_document(self):
         return {
