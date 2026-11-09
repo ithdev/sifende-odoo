@@ -203,28 +203,32 @@ class AccountMove(models.Model):
 
     def _is_ready_to_be_sent(self):
         self.ensure_one()
-        if self._l10n_py_sifende_send_error():
+        if self._sifende_delivery_policy()["send_error"]:
             return False
         return super()._is_ready_to_be_sent()
 
     def _get_report_base_filename(self):
         self.ensure_one()
-        if self._l10n_py_sifende_has_kude():
+        if self._sifende_delivery_policy()["pdf_kind"] == "kude":
             return f"KUDE_{self.l10n_py_cdc}"
         return super()._get_report_base_filename()
 
     def action_send_and_print(self):
-        moves = self.filtered(lambda m: m.state == "posted")
-        errors = [error for m in moves if (error := m._l10n_py_sifende_send_error())]
+        policies = {move: move._sifende_delivery_policy() for move in self}
+        errors = [
+            policy["send_error"]
+            for move, policy in policies.items()
+            if move.state == "posted" and policy["send_error"]
+        ]
         if errors:
             raise UserError("\n".join(errors))
-        if len(self) == 1 and self._l10n_py_sifende_has_kude():
+        if len(self) == 1 and policies[self]["pdf_kind"] == "kude":
             self._l10n_py_sifende_prepare_send()
         return super().action_send_and_print()
 
     def action_print_pdf(self):
         self.ensure_one()
-        if self._l10n_py_sifende_has_kude():
+        if self._sifende_delivery_policy()["pdf_kind"] == "kude":
             self._l10n_py_sifende_kude_content()
         return super().action_print_pdf()
 
