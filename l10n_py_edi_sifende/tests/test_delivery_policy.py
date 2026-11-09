@@ -266,15 +266,16 @@ class TestDeliveryMatrix(DeliveryCommon):
 
 
 @tagged("post_install", "-at_install", "l10n_py_edi_sifende")
-class TestDeliveryPredicates(DeliveryCommon):
-    """Los predicados internos que hoy contestan la misma tabla de verdad."""
+class TestDeliveryIsDocument(DeliveryCommon):
+    """Es documento de Sifende un asiento de venta con conector, aun archivado."""
 
     def check_connector(self, connector):
         self.set_connector(connector)
-        for status, state, move_type, has_cdc in self.cells_without_pdf():
+        for status, state, move_type, has_cdc in itertools.product(
+            STATUSES, MOVE_STATES, MOVE_TYPES, CDCS
+        ):
             with self.subTest(
-                connector=connector,
-                cell=(status, state, move_type, has_cdc),
+                connector=connector, cell=(status, state, move_type, has_cdc)
             ):
                 move = self.moves[move_type, state].sudo()
                 self.set_cell(move, status, has_cdc, False)
@@ -282,21 +283,7 @@ class TestDeliveryPredicates(DeliveryCommon):
                 self.assertEqual(
                     move._l10n_py_sifende_is_document(), want["is_document"]
                 )
-                self.assertEqual(
-                    move._l10n_py_sifende_has_kude(), want["pdf_kind"] == "kude"
-                )
-                self.assertEqual(
-                    move._l10n_py_sifende_is_cancelled_document(),
-                    want["pdf_kind"] == "cancellation_notice",
-                )
-                error = move._l10n_py_sifende_send_error()
-                self.assertEqual(bool(error), bool(want["send_error"]))
-                if error:
-                    self.assertIn(want["send_error"], error)
         self.assertFalse(self.fake.calls)
-
-    def cells_without_pdf(self):
-        return itertools.product(STATUSES, MOVE_STATES, MOVE_TYPES, CDCS)
 
     def test_con_el_conector_activo(self):
         self.check_connector("active")
@@ -356,3 +343,17 @@ class TestDeliveryPolicy(DeliveryCommon):
         writes = [q[:60] for q in queries if not q.upper().startswith("SELECT")]
         self.assertFalse(writes)
         self.assertFalse(self.fake.calls)
+
+    def test_la_politica_busca_el_conector_una_sola_vez_por_documento(self):
+        moves = self.env["account.move"]
+        for status in ("to_send", "processing", "accepted", "cancelled"):
+            for _i in range(2):
+                move = self.make_move("fe")
+                self.set_cell(move, status, True, False)
+                moves |= move
+        moves.invalidate_recordset()
+        with self.recorded_queries() as queries:
+            for move in moves:
+                move._sifende_delivery_policy()
+        lookups = [q for q in queries if 'FROM "l10n_py_edi_connector"' in q]
+        self.assertEqual(len(lookups), len(moves))
