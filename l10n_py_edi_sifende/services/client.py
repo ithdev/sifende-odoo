@@ -20,6 +20,13 @@ RETRY_AFTER_CAP = 10
 TRANSIENT_STATUS = (429, 500, 502, 503, 504)
 TRANSIENT_SLUGS = ("idempotency-in-progress", "idempotency-upstream-unknown")
 
+# how a send to Sifende ended; what happens to the attempt follows from it, for
+# documents (models/account_move.py) and for events (services/event_key.py)
+SEND_CONFIRMED = "confirmed"  # Sifende registered it
+SEND_UNCERTAIN = "uncertain"  # it may have arrived: the next send repeats it
+SEND_DEFINITIVE = "definitive"  # Sifende refused it: the next send starts over
+SEND_NOT_SENT = "not_sent"  # it failed before the POST: nothing arrived
+
 
 class SifendeTransportError(Exception):
     """Timeout o conexión caída: la solicitud pudo no haber llegado."""
