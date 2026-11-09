@@ -8,6 +8,8 @@ class NumberInutilization(models.Model):
     _inherit = "l10n_py.number.inutilization"
 
     l10n_py_sifende_event_key = fields.Char(copy=False, readonly=True)
+    # solicitud (JSON) ligada a la clave del evento: ver services/event_key.py
+    l10n_py_sifende_event_request = fields.Text(copy=False, readonly=True)
 
     def write(self, vals):
         changed = [name for name in REQUEST_FIELDS if name in vals]

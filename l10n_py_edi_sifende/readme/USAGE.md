@@ -44,9 +44,9 @@
    documento rechazado, y pulsá **Enviar al SIFEN**. Luego pulsá **Restablecer a borrador**
    y **Cancelar** en el documento rechazado y emití uno nuevo, que recibe el número siguiente.
    Odoo solo permite inutilizar números sin documento o de documentos rechazados. Si Sifende
-   no respondió, **Enviar al SIFEN** reutiliza la misma solicitud: mientras tanto el timbrado,
-   el rango y el motivo no se pueden cambiar. Para pedir otro rango, eliminá la inutilización
-   y creá una nueva.
+   no respondió, **Enviar al SIFEN** reenvía la misma solicitud que Odoo guardó,
+   aunque mientras tanto cambie el timbrado o su serie; el rango y el motivo no se pueden
+   cambiar. Para pedir otro rango, eliminá la inutilización y creá una nueva.
    La numeración nunca reutiliza un número inutilizado: con una inutilización aceptada, o
    enviada y todavía sin confirmar por Sifende, el siguiente documento salta al número que
    sigue al rango. Las rechazadas y los borradores sin enviar no cuentan.
@@ -54,8 +54,9 @@
    «Cancelar documento electrónico», donde se escribe el motivo (se envía a SIFEN) y se
    confirma con **Cancelar Documento**. Hace falta el rol *Contabilidad > Facturación* y
    estar dentro del plazo que valida Odoo (48 horas las facturas y autofacturas, 7 días las
-   notas). En SANDBOX Sifende no admite cancelaciones: el botón no aparece y Odoo avisa si
-   se intenta por otra vía.
+   notas). Si Sifende no respondió, al volver a abrir el asistente aparece el motivo original,
+   que no se puede cambiar: se reenvía tal cual con la misma clave. En SANDBOX Sifende no
+   admite cancelaciones: el botón no aparece y Odoo avisa si se intenta por otra vía.
 8. Con el documento *Aceptado*, **Imprimir** (el botón y los reportes del menú) entrega el KuDE
    que genera Sifende, con el CDC y el QR, en lugar del PDF estándar de Odoo. **Enviar** manda
    por correo el KuDE, tal como lo entregó Sifende, y el XML firmado (si todavía no están
@@ -92,7 +93,7 @@
    sin vigencia), el documento queda en *Error*, no en *Rechazado*: el mensaje indica qué
    corregir en el panel de Sifende; luego pulsá **Reintentar**.
 15. Si Sifende no responde al cancelar un documento o al enviar una inutilización, volvé a
-   intentarlo: Odoo reutiliza la misma solicitud y no se duplica el evento. *Probar conexión*
+   intentarlo: Odoo reenvía la misma solicitud guardada y no se duplica el evento. *Probar conexión*
    avisa de los puntos de expedición inactivos, y *Registrar webhook*, de un webhook
    desactivado en Sifende.
 16. Si el contacto no tiene departamento ni una ciudad que Sifende reconozca, la factura y las
