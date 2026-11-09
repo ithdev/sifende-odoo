@@ -10,8 +10,8 @@ import time
 from odoo import http
 from odoo.http import request
 
-from ..models.account_move import WEBHOOK_STATES
 from ..models.edi_connector import WEBHOOK_PATH
+from ..services.document_state import WEBHOOK_STATES
 
 _logger = logging.getLogger(__name__)
 
