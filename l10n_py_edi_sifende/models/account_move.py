@@ -8,7 +8,13 @@ from datetime import datetime, timedelta
 from odoo import SUPERUSER_ID, api, fields, models
 from odoo.exceptions import UserError
 
-from ..services.client import SifendeTransportError
+from ..services.client import (
+    SEND_CONFIRMED,
+    SEND_DEFINITIVE,
+    SEND_NOT_SENT,
+    SEND_UNCERTAIN,
+    SifendeTransportError,
+)
 from ..services.document_state import (
     APPROVED_STATES,
     RESUBMITTED_STATES,
@@ -848,21 +854,35 @@ class AccountMove(models.Model):
             response = connector.send_document(document_data)
         except UserError as e:
             # nada llegó a Sifende: el intento incierto, si lo había, sigue abierto
-            response = {
-                "success": False,
-                "edi_status": "error",
-                "error": str(e),
-                "transient": attempt["state"] == "open",
-                "request": attempt["request"],
-            }
+            return self._sifende_settle(
+                SEND_NOT_SENT, {"edi_status": "error", "error": str(e)}, attempt
+            )
         if response.get("success"):
+            outcome = SEND_CONFIRMED
+        elif response.get("transient"):
+            outcome = SEND_UNCERTAIN
+        else:
+            outcome = SEND_DEFINITIVE
+        self._sifende_settle(outcome, response, attempt)
+
+    def _sifende_settle(self, outcome, response, attempt):
+        """End a send: the only place that decides what the outcome leaves behind.
+
+        ``response`` is the dict of the connector and ``attempt`` what
+        ``_sifende_attempt()`` read before sending. An uncertain outcome leaves
+        the attempt open with the request that was sent; confirmed and definitive
+        ones close it; one that never left Odoo changes nothing about it.
+        """
+        self.ensure_one()
+        if outcome == SEND_CONFIRMED:
             self._l10n_py_sifende_set_attempt(False)
-            self._process_edi_response(response)
-            return
-        # mientras el resultado sea incierto se conserva la solicitud original
-        self._l10n_py_sifende_set_attempt(
-            bool(response.get("transient")), response.get("request")
-        )
+            return self._process_edi_response(response)
+        if outcome == SEND_NOT_SENT:
+            keep, request = attempt["state"] == "open", attempt["request"]
+        else:
+            # mientras el resultado sea incierto se conserva la solicitud original
+            keep, request = outcome == SEND_UNCERTAIN, response.get("request")
+        self._l10n_py_sifende_set_attempt(keep, request)
         self.write(
             {
                 "l10n_py_edi_status": response.get("edi_status") or "error",
