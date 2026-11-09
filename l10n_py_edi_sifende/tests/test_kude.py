@@ -195,7 +195,8 @@ class TestKudeImprimir(KudeCommon):
         self.connector.active = False
         # como el portal: descarga por token, con sudo y sin el conector activo
         move = move.sudo().with_context(force_report_rendering=True)
-        self.assertTrue(move._l10n_py_sifende_is_cancelled_document())
+        policy = move._sifende_delivery_policy()
+        self.assertEqual(policy["pdf_kind"], "cancellation_notice")
         documents = move._get_invoice_legal_documents_all(allow_fallback=True)
         single = move._get_invoice_legal_documents("pdf", allow_fallback=True)
         for document in [*documents, single]:
@@ -203,7 +204,7 @@ class TestKudeImprimir(KudeCommon):
             self.assertFalse(document["filename"].startswith("KUDE_"))
         self.assertEqual(len(documents), 1)
         self.assertIn("cancelado en SIFEN", move.l10n_py_sifende_aviso_fiscal)
-        self.assertIn("fue cancelado en SIFEN", move._l10n_py_sifende_send_error())
+        self.assertIn("fue cancelado en SIFEN", policy["send_error"])
         self.assertEqual(base64.b64decode(move.l10n_py_kude_pdf), PDF)
 
     def test_un_aceptado_con_el_conector_archivado_sigue_entregando_su_kude(self):
