@@ -332,6 +332,30 @@ class TestDocumentState(SifendeCommon):
                 )
                 self.release(move)
 
+    def test_refrescar_devuelve_el_estado_aplicado(self):
+        move = self.tracked("processing")
+        self.route_status(self.status_response("APROBADO"))
+        state = move._l10n_py_sifende_refresh_state(self.connector)
+        self.assertEqual(state.estado, "APROBADO")
+        self.assertEqual(move.l10n_py_edi_status, "accepted")
+
+    def test_refrescar_y_el_aviso_levantan_status_unavailable_sin_aplicar_nada(self):
+        for name, (response, _logged_ok) in QUERY_FAILURES.items():
+            with self.subTest(failure=name):
+                move = self.tracked("processing")
+                self.route_status(response)
+                with (
+                    self.assertRaises(StatusUnavailable),
+                    self.assertLogs(ACCOUNT_MOVE_LOGGER, "INFO"),
+                ):
+                    move._l10n_py_sifende_refresh_state(self.connector)
+                with self.assertRaises(StatusUnavailable):
+                    move._l10n_py_sifende_apply_webhook(
+                        self.connector, "documento.aprobado", {"cdc": CDC}
+                    )
+                self.assertEqual(self.outcome(move), STARTS["processing"])
+                self.release(move)
+
     # === Qué documentos consultan estado ===
 
     def test_el_cron_consulta_solo_los_documentos_que_pueden_cambiar(self):

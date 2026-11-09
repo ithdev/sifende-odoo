@@ -2,6 +2,7 @@ import base64
 import json
 import logging
 import time
+from contextlib import suppress
 from datetime import datetime, timedelta
 
 from odoo import SUPERUSER_ID, api, fields, models
@@ -12,6 +13,7 @@ from ..services.document_state import (
     APPROVED_STATES,
     RESUBMITTED_STATES,
     WEBHOOK_STATES,
+    StatusUnavailable,
 )
 from .edi_connector import KUDE_MAX_WAIT
 
@@ -1142,29 +1144,34 @@ class AccountMove(models.Model):
             self.l10n_py_edi_status in ("processing", "accepted")
             or self._l10n_py_sifende_is_failed()
         ):
-            self._l10n_py_sifende_refresh_state(connector)
+            # la consulta fallida ya quedó en el log; el cron la reintenta en su turno
+            # y, mientras tanto, un documento aceptado sigue con sus archivos
+            with suppress(StatusUnavailable):
+                self._l10n_py_sifende_refresh_state(connector)
         if self.l10n_py_edi_status == "accepted":
             self._l10n_py_sifende_fetch_files(connector, kude_wait)
 
     def _l10n_py_sifende_refresh_state(self, connector, announced=None, message=None):
-        """Aplica el estado vigente en Sifende.
+        """Aplica el estado vigente en Sifende y lo devuelve (DocumentState).
 
-        Devuelve False si la consulta falló: una falla no es un estado fiscal y no
-        se aplica nada. Un estado no aprobado (rechazado, cancelado...) sí llega
-        con su `result`, aunque la consulta lo marque como no exitoso.
+        Levanta StatusUnavailable si la consulta no trajo un estado: una falla no es
+        un estado fiscal y no se aplica nada. Cada llamador decide cómo reintentar.
         """
         self.ensure_one()
-        result = connector._sifende_check_status(self.l10n_py_cdc).get("result") or {}
-        state = result.get("estado")
-        if not state:
+        try:
+            state = connector._sifende_read_status(self.l10n_py_cdc)
+        except StatusUnavailable:
             _logger.info(
                 "Sin estado vigente en Sifende para el documento %s", self.l10n_py_cdc
             )
-            return False
-        if not (announced and message and self._sifende_same_outcome(announced, state)):
-            message = result.get("mensajeRechazo")
-        self._l10n_py_sifende_apply_state(state, message)
-        return True
+            raise
+        estado = state.estado
+        if not (
+            announced and message and self._sifende_same_outcome(announced, estado)
+        ):
+            message = state.message
+        self._l10n_py_sifende_apply_state(estado, message)
+        return state
 
     @staticmethod
     def _sifende_same_outcome(announced, state):
@@ -1226,7 +1233,7 @@ class AccountMove(models.Model):
             self.write({"l10n_py_edi_status": "cancelled"})
 
     def _l10n_py_sifende_apply_webhook(self, connector, event_type, data):
-        """Devuelve False si no se pudo consultar el estado vigente."""
+        """Levanta StatusUnavailable si no se pudo consultar el estado vigente."""
         self.ensure_one()
         announced = WEBHOOK_STATES[event_type]
         status = self.l10n_py_edi_status
@@ -1242,13 +1249,9 @@ class AccountMove(models.Model):
                 for result in results or []
                 if isinstance(result, dict) and result.get("mensaje")
             )
-            if not self._l10n_py_sifende_refresh_state(
-                connector, announced, message or None
-            ):
-                return False
+            self._l10n_py_sifende_refresh_state(connector, announced, message or None)
         if self.l10n_py_edi_status == "accepted":
             self._l10n_py_sifende_fetch_files(connector, kude_wait=0)
-        return True
 
     def _l10n_py_sifende_fetch_files(self, connector, kude_wait=KUDE_MAX_WAIT):
         self.ensure_one()
