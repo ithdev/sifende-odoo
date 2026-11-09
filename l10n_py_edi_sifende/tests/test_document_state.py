@@ -5,7 +5,12 @@ from unittest.mock import patch
 import requests
 
 from odoo import fields
-from odoo.tests import tagged
+from odoo.tests import BaseCase, tagged
+
+from odoo.addons.l10n_py_edi_sifende.services.document_state import (
+    DocumentState,
+    StatusUnavailable,
+)
 
 from .common import CDC, FakeResponse, SifendeCommon, problem
 
@@ -174,14 +179,40 @@ class TestDocumentState(SifendeCommon):
         )
 
     def test_check_status_con_cuerpo_sin_estado_no_es_exitoso(self):
-        # diferencia documentada del refactor: con o sin `result`, para OCA es un
-        # fracaso y no hay estado que aplicar
-        result = self.check(FakeResponse(200, {"cdc": CDC}))
-        self.assertIs(result["success"], False)
-        self.assertEqual(
-            result,
-            {"success": False, "result": {"cdc": CDC}, "error": None},
+        # diferencia documentada del refactor: antes devolvía el cuerpo en `result`
+        # y un `error` vacío; ahora es una consulta fallida, como cualquier otra.
+        # Para OCA (que solo lee `success`) es lo mismo: no hay estado que aplicar
+        for body in ({"cdc": CDC}, {}, {"estado": None, "cdc": CDC}):
+            with self.subTest(body=body):
+                self.assertEqual(
+                    self.check(FakeResponse(200, body)),
+                    {
+                        "success": False,
+                        "error": "Sifende no informó el estado del documento.",
+                    },
+                )
+
+    # === _sifende_read_status ===
+
+    def test_read_status_devuelve_el_estado(self):
+        self.route_status(
+            self.status_response("RECHAZADO", mensajeRechazo="1001 - motivo")
         )
+        state = self.connector._sifende_read_status(CDC)
+        self.assertIsInstance(state, DocumentState)
+        self.assertEqual(
+            (state.cdc, state.estado, state.message),
+            (CDC, "RECHAZADO", "1001 - motivo"),
+        )
+        self.assertFalse(state.approved)
+        self.assertEqual(state.raw["numeroDocumento"], 1)
+
+    def test_read_status_levanta_status_unavailable_ante_una_consulta_fallida(self):
+        for name, (response, _logged_ok) in QUERY_FAILURES.items():
+            with self.subTest(failure=name):
+                self.route_status(response)
+                with self.assertRaises(StatusUnavailable):
+                    self.connector._sifende_read_status(CDC)
 
     # === Garantía de H9 en el cron ===
 
@@ -338,3 +369,37 @@ class TestDocumentState(SifendeCommon):
                     ),
                 )
                 self.release(move)
+
+
+@tagged("post_install", "-at_install", "l10n_py_edi_sifende")
+class TestDocumentStateValue(BaseCase):
+    def test_un_cuerpo_sin_estado_no_es_un_estado(self):
+        for body in (
+            None,
+            [],
+            "APROBADO",
+            {},
+            {"cdc": CDC},
+            {"estado": None},
+            {"estado": ""},
+        ):
+            with self.subTest(body=body):
+                self.assertIsNone(DocumentState.from_body(CDC, body))
+
+    def test_un_estado_conserva_el_mensaje_y_copia_el_cuerpo(self):
+        body = {"cdc": CDC, "estado": "RECHAZADO", "mensajeRechazo": "1001"}
+        state = DocumentState.from_body(CDC, body)
+        self.assertEqual(
+            (state.cdc, state.estado, state.message), (CDC, "RECHAZADO", "1001")
+        )
+        self.assertEqual(state.raw, body)
+        self.assertIsNot(state.raw, body)
+        self.assertIsNone(DocumentState.from_body(CDC, {"estado": "ERROR"}).message)
+
+    def test_solo_los_aprobados_estan_aprobados(self):
+        for estado in ("APROBADO", "APROBADO_OBSERVACION", "RECHAZADO", "PENDIENTE"):
+            with self.subTest(estado=estado):
+                self.assertEqual(
+                    DocumentState.from_body(CDC, {"estado": estado}).approved,
+                    estado.startswith("APROBADO"),
+                )

@@ -15,7 +15,7 @@ from ..services.client import (
     is_secure_url,
     mask_key,
 )
-from ..services.document_state import APPROVED_STATES
+from ..services.document_state import DocumentState, StatusUnavailable
 from ..services.request_builder import SifendeRequestBuilder
 
 DEFAULT_BASE_URL = "https://api.sifende.com.py"
@@ -423,7 +423,12 @@ class EDIConnector(models.Model):
             )
         )
 
-    def _sifende_check_status(self, cdc):
+    def _sifende_read_status(self, cdc):
+        """Return the DocumentState of `cdc`; raise StatusUnavailable if there is none.
+
+        A failed query is not a state: the caller never gets something it could
+        apply by mistake.
+        """
         self.ensure_one()
         try:
             response = self._sifende_client().request(
@@ -433,20 +438,34 @@ class EDIConnector(models.Model):
                 cdc=cdc,
             )
         except SifendeTransportError as e:
-            return {"success": False, "error": str(e)}
+            raise StatusUnavailable(str(e)) from e
         if not (response.ok and isinstance(response.body, dict)):
-            return {"success": False, "error": response.failure_message(self.env)}
-        body = response.body
-        estado = body.get("estado")
-        result = dict(body)
-        message = body.get("mensajeRechazo")
-        if estado in APPROVED_STATES:
+            raise StatusUnavailable(response.failure_message(self.env))
+        state = DocumentState.from_body(cdc, response.body)
+        if state is None:
+            raise StatusUnavailable(
+                self.env._("Sifende no informó el estado del documento.")
+            )
+        return state
+
+    def _sifende_check_status(self, cdc):
+        """Adapter of the OCA `check_status` contract over _sifende_read_status."""
+        self.ensure_one()
+        try:
+            state = self._sifende_read_status(cdc)
+        except StatusUnavailable as e:
+            return {"success": False, "error": str(e)}
+        result = dict(state.raw)
+        if state.approved:
             result["status"] = "Aprobado"
             return {"success": True, "result": result}
-        if estado == "RECHAZADO":
+        if state.estado == "RECHAZADO":
             result["status"] = "Rechazado"
-            return {"success": False, "result": result, "error": message or estado}
-        return {"success": False, "result": result, "error": message or estado}
+        return {
+            "success": False,
+            "result": result,
+            "error": state.message or state.estado,
+        }
 
     def _sifende_cancel_document(self, cdc, reason):
         self.ensure_one()
