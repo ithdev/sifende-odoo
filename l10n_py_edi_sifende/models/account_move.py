@@ -357,6 +357,27 @@ class AccountMove(models.Model):
         self.ensure_one()
         self.l10n_py_sifende_intento += 1
 
+    def _sifende_attempt(self):
+        """Where the send attempt stands, read before a send touches anything.
+
+        ``state`` is ``open`` when the last send had an uncertain result (the next
+        one repeats its key and its stored request), ``closed`` when it ended for
+        good (the next one starts a new attempt) and ``new`` when there is none.
+        ``request`` is the body of an open attempt, or ``{}``.
+        """
+        self.ensure_one()
+        if self._l10n_py_sifende_pending_send():
+            state = "open"
+        elif self._l10n_py_sifende_closed_attempt():
+            state = "closed"
+        else:
+            state = "new"
+        stored = self.sudo().l10n_py_sifende_request
+        return {
+            "state": state,
+            "request": json.loads(stored) if stored and state == "open" else {},
+        }
+
     @api.depends(
         "company_id",
         "l10n_py_cdc",
@@ -803,16 +824,15 @@ class AccountMove(models.Model):
             raise UserError(self._l10n_py_sifende_failed_steps())
         # antes de tocar el estado: si ya hay un intento incierto abierto, un fallo
         # previo al POST (acceso, ambiente, API key, URL) no lo cierra
-        open_attempt = self._l10n_py_sifende_pending_send()
-        stored = self._l10n_py_sifende_stored_request()
-        if stored:
+        attempt = self._sifende_attempt()
+        if attempt["request"]:
             # la misma clave exige la misma solicitud: contacto, producto y unidad
             # de medida pueden haber cambiado desde el intento original
             document_data = {
                 "sifende": {
                     "moveId": self.id,
                     "idempotencyKey": self._l10n_py_sifende_idempotency_key(),
-                    "request": stored,
+                    "request": attempt["request"],
                 }
             }
         else:
@@ -820,7 +840,7 @@ class AccountMove(models.Model):
             self._validate_edi_data()
             # cualquier camino de envío (botón, asistente, registro, cola de
             # contingencia, reintento) abre un intento nuevo tras uno cerrado
-            if self._l10n_py_sifende_closed_attempt():
+            if attempt["state"] == "closed":
                 self._l10n_py_sifende_renew_attempt()
             document_data = self._prepare_edi_document_data()
         self.l10n_py_edi_status = "sent"
@@ -832,8 +852,8 @@ class AccountMove(models.Model):
                 "success": False,
                 "edi_status": "error",
                 "error": str(e),
-                "transient": open_attempt,
-                "request": stored,
+                "transient": attempt["state"] == "open",
+                "request": attempt["request"],
             }
         if response.get("success"):
             self._l10n_py_sifende_set_attempt(False)
@@ -852,13 +872,6 @@ class AccountMove(models.Model):
         )
         if response.get("number_conflict"):
             self._l10n_py_sifende_register_number_conflict(response.get("existing_cdc"))
-
-    def _l10n_py_sifende_stored_request(self):
-        self.ensure_one()
-        request = self.sudo().l10n_py_sifende_request
-        if request and self._l10n_py_sifende_pending_send():
-            return json.loads(request)
-        return {}
 
     def _l10n_py_sifende_set_attempt(self, pending, request=None):
         """Abrir o cerrar el intento de resultado incierto.
