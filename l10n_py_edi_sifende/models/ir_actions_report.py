@@ -22,7 +22,9 @@ class IrActionsReport(models.Model):
                 report_ref, data, res_ids=res_ids
             )
         moves = self.env["account.move"].browse(res_ids)
-        with_kude = moves.filtered(lambda m: m._l10n_py_sifende_has_kude())
+        with_kude = moves.filtered(
+            lambda m: m._sifende_delivery_policy()["pdf_kind"] == "kude"
+        )
         if not with_kude:
             return super()._render_qweb_pdf_prepare_streams(
                 report_ref, data, res_ids=res_ids

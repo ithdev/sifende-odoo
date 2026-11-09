@@ -7,6 +7,8 @@ class AccountMoveSendWizard(models.TransientModel):
     @api.depends("move_id")
     def _compute_display_pdf_report_id(self):
         res = super()._compute_display_pdf_report_id()
-        for wizard in self.filtered(lambda w: w.move_id._l10n_py_sifende_has_kude()):
+        for wizard in self.filtered(
+            lambda w: w.move_id._sifende_delivery_policy()["pdf_kind"] == "kude"
+        ):
             wizard.display_pdf_report_id = False
         return res
