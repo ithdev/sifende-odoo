@@ -1,8 +1,10 @@
 import base64
+import io
+import zipfile
 from unittest.mock import patch
 
 from odoo.exceptions import UserError
-from odoo.tests import tagged
+from odoo.tests import HttpCase, tagged
 
 from odoo.addons.account.models.account_move_send import AccountMoveSend
 from odoo.addons.base.models.ir_actions_report import IrActionsReport
@@ -184,6 +186,54 @@ class TestKudeImprimir(KudeCommon):
         self.assertEqual(base64.b64decode(move.l10n_py_kude_pdf), PDF)
         self.assertEqual(base64.b64decode(move.l10n_py_edi_xml), XML)
         self.assertEqual(move.invoice_pdf_report_id.raw, PDF)
+
+    def test_un_cancelado_con_el_conector_archivado_no_entrega_el_kude_aprobado(self):
+        move = self.accepted_move()
+        self.send(move)
+        move._l10n_py_sifende_apply_state("CANCELADO")
+        self.assertEqual(move.l10n_py_edi_status, "cancelled")
+        self.connector.active = False
+        # como el portal: descarga por token, con sudo y sin el conector activo
+        move = move.sudo().with_context(force_report_rendering=True)
+        self.assertTrue(move._l10n_py_sifende_is_cancelled_document())
+        documents = move._get_invoice_legal_documents_all(allow_fallback=True)
+        single = move._get_invoice_legal_documents("pdf", allow_fallback=True)
+        for document in [*documents, single]:
+            self.assertEqual(document["content"], ODOO_PDF)
+            self.assertFalse(document["filename"].startswith("KUDE_"))
+        self.assertEqual(len(documents), 1)
+        self.assertIn("cancelado en SIFEN", move.l10n_py_sifende_aviso_fiscal)
+        self.assertIn("fue cancelado en SIFEN", move._l10n_py_sifende_send_error())
+        self.assertEqual(base64.b64decode(move.l10n_py_kude_pdf), PDF)
+
+    def test_un_aceptado_con_el_conector_archivado_sigue_entregando_su_kude(self):
+        move = self.accepted_move()
+        self.connector.active = False
+        move = move.sudo().with_context(force_report_rendering=True)
+        self.assertEqual(
+            move._get_invoice_legal_documents("pdf", allow_fallback=True)["content"],
+            PDF,
+        )
+
+    def test_un_aceptado_sin_archivos_y_con_el_conector_archivado_avisa_sin_romper(
+        self,
+    ):
+        move = self.accepted_move(files=False)
+        self.connector.active = False
+        move = move.sudo().with_context(force_report_rendering=True)
+        # sin conector activo no hay de dónde traer el KuDE: aviso claro, no ValueError
+        with self.assertRaisesRegex(UserError, "todavía no entregó el KuDE"):
+            move._get_invoice_legal_documents("pdf", allow_fallback=True)
+        with self.assertRaisesRegex(UserError, "todavía no entregó el KuDE"):
+            move._get_invoice_legal_documents_all(allow_fallback=True)
+        with self.assertRaisesRegex(UserError, "todavía no entregó el KuDE"):
+            move.action_print_pdf()
+        self.assertFalse(move.l10n_py_kude_pdf)
+
+    def test_un_borrador_sin_emitir_no_es_documento_con_el_conector_archivado(self):
+        move = self.make_move("fe")
+        self.connector.active = False
+        self.assertFalse(move._l10n_py_sifende_is_document())
 
     def test_el_pdf_de_un_cancelado_lleva_el_aviso_de_cancelacion(self):
         move = self.accepted_move(l10n_py_edi_status="cancelled")
@@ -416,3 +466,61 @@ class TestKudeSinSifende(KudeCommon):
         self.assertFalse(
             self.env["account.move.send"]._get_invoice_extra_attachments(move)
         )
+
+
+@tagged("post_install", "-at_install", "l10n_py_edi_sifende")
+class TestKudePortalDownload(KudeCommon, HttpCase):
+    def setUp(self):
+        super().setUp()
+        # el servidor de test no renderiza PDF sin force_report_rendering y la
+        # petición HTTP no puede llevar ese contexto
+        render = IrActionsReport._pre_render_qweb_pdf
+
+        def force_render(report, *args, **kwargs):
+            return render(
+                report.with_context(force_report_rendering=True), *args, **kwargs
+            )
+
+        patcher = patch.object(IrActionsReport, "_pre_render_qweb_pdf", force_render)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def portal_download(self, move):
+        url = (
+            f"/my/invoices/{move.id}?access_token={move._portal_ensure_token()}"
+            "&report_type=pdf&download=true"
+        )
+        return self.url_open(url)
+
+    def test_el_portal_de_un_cancelado_con_el_conector_archivado_no_sirve_el_kude(
+        self,
+    ):
+        move = self.accepted_move()
+        self.send(move)
+        move._l10n_py_sifende_apply_state("CANCELADO")
+        self.assertEqual(move.l10n_py_edi_status, "cancelled")
+        self.assertEqual(move.state, "posted")
+        self.assertEqual(base64.b64decode(move.l10n_py_kude_pdf), PDF)
+        self.connector.active = False
+        self.env.flush_all()
+        response = self.portal_download(move)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["Content-Type"], "application/pdf")
+        self.assertEqual(response.content, ODOO_PDF)
+        self.assertNotEqual(response.content, PDF)
+        self.assertNotIn("KUDE_", response.headers["Content-Disposition"])
+
+    def test_el_portal_de_un_aceptado_con_el_conector_archivado_sigue_sirviendo_el_kude(
+        self,
+    ):
+        move = self.accepted_move()
+        self.connector.active = False
+        self.env.flush_all()
+        response = self.portal_download(move)
+        self.assertEqual(response.status_code, 200)
+        # KuDE y XML juntos: el portal los entrega en un zip
+        with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
+            self.assertEqual(
+                sorted(archive.namelist()), [f"{CDC}.xml", f"KUDE_{CDC}.pdf"]
+            )
+            self.assertEqual(archive.read(f"KUDE_{CDC}.pdf"), PDF)
