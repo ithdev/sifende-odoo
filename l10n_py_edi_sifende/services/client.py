@@ -20,12 +20,28 @@ RETRY_AFTER_CAP = 10
 TRANSIENT_STATUS = (429, 500, 502, 503, 504)
 TRANSIENT_SLUGS = ("idempotency-in-progress", "idempotency-upstream-unknown")
 
+CONFLICT_STATUS = 409
+
 # how a send to Sifende ended; what happens to the attempt follows from it, for
 # documents (models/account_move.py) and for events (services/event_key.py)
 SEND_CONFIRMED = "confirmed"  # Sifende registered it
 SEND_UNCERTAIN = "uncertain"  # it may have arrived: the next send repeats it
 SEND_DEFINITIVE = "definitive"  # Sifende refused it: the next send starts over
 SEND_NOT_SENT = "not_sent"  # it failed before the POST: nothing arrived
+
+
+def is_uncertain(response, *, event=False):
+    """Whether the answer leaves open that Sifende registered the request.
+
+    Retrying the same request with the same idempotency key is then the only safe
+    answer. An event also is uncertain with a 409, which means that it is already
+    pending; for a document a 409 is a refusal, except the idempotency slugs.
+    """
+    return (
+        response.status_code in TRANSIENT_STATUS
+        or response.slug in TRANSIENT_SLUGS
+        or (event and response.status_code == CONFLICT_STATUS)
+    )
 
 
 class SifendeTransportError(Exception):
@@ -216,9 +232,7 @@ class SifendeClient:
     def _should_retry(response, transport_error):
         if transport_error is not None:
             return True
-        return (
-            response.status_code in TRANSIENT_STATUS or response.slug in TRANSIENT_SLUGS
-        )
+        return is_uncertain(response)
 
     @staticmethod
     def _backoff(attempt, response):
