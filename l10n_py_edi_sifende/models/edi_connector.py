@@ -7,12 +7,14 @@ from ..services import event_key
 from ..services.client import (
     RETRY_AFTER_CAP,
     RETRY_BACKOFF,
-    TRANSIENT_SLUGS,
-    TRANSIENT_STATUS,
+    SEND_CONFIRMED,
+    SEND_DEFINITIVE,
+    SEND_UNCERTAIN,
     SifendeClient,
     SifendeTransportError,
     insecure_url_message,
     is_secure_url,
+    is_uncertain,
     mask_key,
 )
 from ..services.document_state import DocumentState, StatusUnavailable
@@ -331,7 +333,7 @@ class EDIConnector(models.Model):
             failure["number_conflict"] = True
             failure["existing_cdc"] = body.get("cdc") or body.get("cdcExistente")
             failure["error"] = self._sifende_number_conflict_message(response)
-        elif slug in TRANSIENT_SLUGS or response.status_code in TRANSIENT_STATUS:
+        elif is_uncertain(response):
             failure["transient"] = True
             failure["error"] = self.env._(
                 "SIFENDE no pudo procesar el envío ahora (HTTP %(status)s). "
@@ -543,26 +545,37 @@ class EDIConnector(models.Model):
                 cdc=cdc,
             )
         except SifendeTransportError as e:
-            return {"success": False, "error": str(e)}
+            outcome, result = SEND_UNCERTAIN, {"success": False, "error": str(e)}
+        else:
+            outcome, result = self._sifende_event_result(response)
+        event_key.settle(record, outcome)
+        return result
+
+    def _sifende_event_result(self, response):
+        """The outcome of an event and the dict that the OCA caller receives."""
         body = response.body if isinstance(response.body, dict) else {}
         if not response.ok:
-            if self._sifende_is_definitive(response):
-                event_key.forget(record, committed=True)
-            return {"success": False, "error": response.failure_message(self.env)}
+            outcome = (
+                SEND_UNCERTAIN
+                if is_uncertain(response, event=True)
+                else SEND_DEFINITIVE
+            )
+            return outcome, {
+                "success": False,
+                "error": response.failure_message(self.env),
+            }
         state = body.get("estadoEvento")
         if state in EVENT_APPROVED_STATES:
-            event_key.forget(record, committed=False)
-            return {"success": True, "result": body}
+            return SEND_CONFIRMED, {"success": True, "result": body}
         if state == EVENT_REJECTED_STATE:
-            event_key.forget(record, committed=True)
-            return {
+            return SEND_DEFINITIVE, {
                 "success": False,
                 "result": body,
                 "error": body.get("mensajeRespuesta")
                 or self.env._("SIFEN rechazó el evento."),
             }
         # sin estado, pendiente o desconocido: no está aprobado; se conserva la clave
-        return {
+        return SEND_UNCERTAIN, {
             "success": False,
             "result": body,
             "error": self.env._(
@@ -571,15 +584,6 @@ class EDIConnector(models.Model):
                 state=state or self.env._("sin estado"),
             ),
         }
-
-    @staticmethod
-    def _sifende_is_definitive(response):
-        # un fallo transitorio o un evento ya pendiente se retoma con la misma clave
-        return not (
-            response.status_code in TRANSIENT_STATUS
-            or response.status_code == 409
-            or response.slug in TRANSIENT_SLUGS
-        )
 
     def _sifende_test_connection(self):
         self.ensure_one()
