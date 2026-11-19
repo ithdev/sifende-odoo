@@ -76,7 +76,10 @@ def _reserve(record, key, request):
                         SQL(", ").join(SQL.identifier(name) for name in FIELDS),
                         SQL.identifier(record._table),
                         record.id,
-                    )
+                    ),
+                    # a serialization failure is expected and retried below: it is
+                    # not a bad query
+                    log_exceptions=False,
                 )
                 stored_key, stored_request = cr.fetchone() or (None, None)
                 if not (stored_key and stored_request):
