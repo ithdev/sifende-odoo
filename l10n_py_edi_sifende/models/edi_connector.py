@@ -425,7 +425,7 @@ class EDIConnector(models.Model):
             )
         )
 
-    def _sifende_read_status(self, cdc):
+    def _sifende_read_status(self, cdc, log=True):
         """Return the DocumentState of `cdc`; raise StatusUnavailable if there is none.
 
         A failed query is not a state: the caller never gets something it could
@@ -438,6 +438,7 @@ class EDIConnector(models.Model):
                 f"/documento-electronico/status/{cdc}",
                 operation="status",
                 cdc=cdc,
+                log=log,
             )
         except SifendeTransportError as e:
             raise StatusUnavailable(str(e)) from e
