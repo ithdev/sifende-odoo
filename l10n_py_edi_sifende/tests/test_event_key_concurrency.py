@@ -28,7 +28,10 @@ class TestEventKeyConcurrency(TransactionCase):
         super().setUp()
         # el cargador de pruebas retiene el candado del registro: sin esto, los hilos
         # de abajo no podrían ni crear su entorno
-        self.enterContext(patch.object(Registry, "_lock", DummyRLock()))
+        # enterContext necesita Python 3.11 y el CI de 18.0 corre con 3.10
+        lock = patch.object(Registry, "_lock", DummyRLock())
+        lock.start()
+        self.addCleanup(lock.stop)
         today = date.today()
         with self.registry.cursor() as cr:
             env = api.Environment(cr, SUPERUSER_ID, {})
