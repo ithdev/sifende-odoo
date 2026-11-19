@@ -11,6 +11,7 @@ import requests
 
 from odoo import fields
 from odoo.tests import HttpCase, tagged
+from odoo.tools import mute_logger
 
 from .common import CDC, FakeResponse, SifendeCommon
 from .test_edi_flow import PDF, XML
@@ -201,6 +202,7 @@ class TestWebhookController(SifendeCommon, HttpCase):
         self.post("documento.cancelado", estado="CANCELADO")
         self.assertEqual(move.l10n_py_edi_status, "accepted")
 
+    @mute_logger("odoo.addons.l10n_py_edi_sifende.controllers.main")
     def test_sin_respuesta_a_la_consulta_el_documento_queda_para_el_cron(self):
         move = self.processing_move()
         self.fake.add(
@@ -213,6 +215,7 @@ class TestWebhookController(SifendeCommon, HttpCase):
         self.env["account.move"]._cron_sifende_check_status()
         self.assertEqual(move.l10n_py_edi_status, "rejected")
 
+    @mute_logger("odoo.addons.l10n_py_edi_sifende.controllers.main")
     def test_falla_de_consulta_responde_recuperable_y_no_consume_el_evento(self):
         move = self.processing_move()
         self.post("documento.aprobado")
@@ -237,6 +240,7 @@ class TestWebhookController(SifendeCommon, HttpCase):
         self.assertEqual(move.l10n_py_edi_status, "cancelled")
         self.assertTrue(self.events().filtered(lambda e: e.event_id == "evt-cancel"))
 
+    @mute_logger("odoo.addons.l10n_py_edi_sifende.controllers.main")
     def test_falla_de_consulta_deja_la_traza_en_el_log_y_no_el_evento(self):
         move = self.processing_move()
         status_logs = self.env["l10n_py.edi.log"].search(
@@ -289,14 +293,17 @@ class TestWebhookController(SifendeCommon, HttpCase):
         self.assertEqual(move.l10n_py_edi_status, "cancelled")
         self.assertTrue(self.events().filtered(lambda e: e.event_id == "evt-fail"))
 
+    @mute_logger("odoo.addons.l10n_py_edi_sifende.controllers.main")
     def test_consulta_con_503_responde_recuperable(self):
         self.assert_failed_query_is_recoverable(
             FakeResponse(503, {"detail": "no disponible"}), False
         )
 
+    @mute_logger("odoo.addons.l10n_py_edi_sifende.controllers.main")
     def test_consulta_sin_estado_responde_recuperable(self):
         self.assert_failed_query_is_recoverable(FakeResponse(200, {"cdc": CDC}), True)
 
+    @mute_logger("odoo.addons.l10n_py_edi_sifende.controllers.main")
     def test_consulta_que_no_es_un_objeto_responde_recuperable(self):
         self.assert_failed_query_is_recoverable(FakeResponse(200, ["x"]), True)
 
