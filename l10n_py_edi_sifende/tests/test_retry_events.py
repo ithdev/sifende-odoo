@@ -1,6 +1,7 @@
 from odoo import fields
 from odoo.exceptions import UserError
 from odoo.tests import tagged
+from odoo.tools import mute_logger
 
 from .common import CDC, FakeResponse, SifendeCommon, problem
 
@@ -53,6 +54,7 @@ class TestRetryEvents(SifendeCommon):
 
     # === Inutilización ===
 
+    @mute_logger("odoo.addons.l10n_py_edi_base.models.l10n_py_number_inutilization")
     def test_la_inutilizacion_reintenta_el_mismo_cuerpo_aunque_cambie_el_timbrado(self):
         inutilization = self.inutilization()
         first = self.send_uncertain(inutilization)
@@ -70,6 +72,7 @@ class TestRetryEvents(SifendeCommon):
         )
         self.assertEqual(retry.json, first.json)
 
+    @mute_logger("odoo.addons.l10n_py_edi_base.models.l10n_py_number_inutilization")
     def test_la_inutilizacion_confirmada_descarta_clave_y_solicitud(self):
         inutilization = self.inutilization()
         self.send_uncertain(inutilization)
@@ -81,6 +84,7 @@ class TestRetryEvents(SifendeCommon):
         self.assertFalse(inutilization.l10n_py_sifende_event_key)
         self.assertFalse(inutilization.l10n_py_sifende_event_request)
 
+    @mute_logger("odoo.addons.l10n_py_edi_base.models.l10n_py_number_inutilization")
     def test_el_rechazo_definitivo_de_una_inutilizacion_descarta_la_solicitud(self):
         inutilization = self.inutilization()
         self.send_uncertain(inutilization)
@@ -93,6 +97,7 @@ class TestRetryEvents(SifendeCommon):
         self.assertFalse(inutilization.l10n_py_sifende_event_key)
         self.assertFalse(inutilization.l10n_py_sifende_event_request)
 
+    @mute_logger("odoo.addons.l10n_py_edi_base.models.l10n_py_number_inutilization")
     def test_la_solicitud_de_una_inutilizacion_no_se_copia(self):
         inutilization = self.inutilization()
         self.send_uncertain(inutilization)
