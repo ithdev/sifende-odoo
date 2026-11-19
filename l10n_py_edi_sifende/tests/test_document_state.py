@@ -477,9 +477,12 @@ class TestRefreshGate(SifendeCommon):
                     or (stale and (recent if status == "accepted" else True))
                 )
                 self.assertEqual(wants, in_flight or status == "accepted")
+                first, watched = Move._l10n_py_sifende_to_sync(self.connector)
+                # los archivos pendientes solo cuentan en un aceptado: un documento
+                # cancelado antes de recibirlos conserva la marca
                 self.assertEqual(
-                    move in Move._l10n_py_sifende_to_sync(self.connector),
-                    bool(expected or pending_files),
+                    move in first | watched,
+                    bool(expected or (pending_files and status == "accepted")),
                 )
 
     def test_un_aviso_solo_reabre_un_aceptado_si_anuncia_la_cancelacion(self):
